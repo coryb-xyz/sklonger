@@ -6,12 +6,34 @@ description = "Bluesky thread concatenator web service"
 license = "MIT"
 
 [dependencies]
+# Web framework
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+
+# Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
 anyhow = "1"
 thiserror = "2"
+
+# AT Protocol
+atrium-api = { version = "0.25", default-features = false, features = ["namespace-appbsky"] }
+atrium-xrpc-client = { version = "0.5", default-features = false, features = ["reqwest"] }
+
+# HTTP client
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Utilities
+url = "2"
+html-escape = "0.2"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+regex-lite = "0.1"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
@@ -23,3 +45,9 @@ path = "src/main.rs"
 [lib]
 name = "skeet_longer"
 path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

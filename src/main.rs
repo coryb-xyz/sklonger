@@ -11,7 +11,7 @@ async fn main() -> anyhow::Result<()> {
 
     logging::init(&config.log_level)?;
 
-    let app = create_app();
+    let app = create_app(&config)?;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     let listener = TcpListener::bind(addr).await?;
