@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use atrium_api::app::bsky::feed::defs::ThreadViewPostParentRefs;
+use atrium_api::app::bsky::feed::defs::{
+    ThreadViewPost, ThreadViewPostParentRefs, ThreadViewPostRepliesItem,
+};
 use atrium_api::app::bsky::feed::get_post_thread::{OutputThreadRefs, ParametersData};
 use atrium_api::client::AtpServiceClient;
 use atrium_api::types::Union;
@@ -70,10 +72,84 @@ impl BlueskyClient {
     }
 
     pub async fn get_thread(&self, at_uri: &str) -> Result<Thread, ClientError> {
+        // First, find the root by walking up parents with API calls
+        let root_uri = self.find_root_uri_async(at_uri).await?;
+
+        // Get author DID from the root post
+        let root_view = self.fetch_post_thread_shallow(&root_uri).await?;
+        let author_did = root_view.post.author.did.to_string();
+        let author = self.extract_author(&root_view)?;
+
+        // Now iteratively follow self-replies, making API calls as needed
+        let mut posts = vec![self.extract_post(&root_view)?];
+        let mut current_uri = match self.find_self_reply(&root_view, &author_did) {
+            Some(uri) => uri,
+            None => return Ok(Thread { posts, author }),
+        };
+
+        loop {
+            let view = self.fetch_post_thread_shallow(&current_uri).await?;
+            posts.push(self.extract_post(&view)?);
+
+            // Find the self-reply in this post's replies
+            match self.find_self_reply(&view, &author_did) {
+                Some(reply_uri) => {
+                    current_uri = reply_uri;
+                }
+                None => break,
+            }
+        }
+
+        Ok(Thread { posts, author })
+    }
+
+    /// Find the root URI by walking up parents with individual API calls.
+    /// This avoids stack overflow from deeply nested response structures.
+    async fn find_root_uri_async(&self, start_uri: &str) -> Result<String, ClientError> {
+        let mut current_uri = start_uri.to_string();
+
+        loop {
+            let view = self.fetch_post_thread_shallow(&current_uri).await?;
+            let author_did = view.post.author.did.as_str();
+
+            // Check if there's a parent by the same author
+            match self.get_parent_uri_if_same_author(&view, author_did) {
+                Some(parent_uri) => {
+                    current_uri = parent_uri;
+                }
+                None => {
+                    // No more parents by this author, current is the root
+                    return Ok(current_uri);
+                }
+            }
+        }
+    }
+
+    /// Get parent URI if the parent is by the same author
+    fn get_parent_uri_if_same_author(
+        &self,
+        view: &ThreadViewPost,
+        author_did: &str,
+    ) -> Option<String> {
+        match &view.parent {
+            Some(Union::Refs(ThreadViewPostParentRefs::ThreadViewPost(parent))) => {
+                if parent.post.author.did.as_str() == author_did {
+                    Some(parent.post.uri.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Fetch a single post with shallow context (1 parent, 1 reply level).
+    /// This prevents stack overflow from deeply nested response structures.
+    async fn fetch_post_thread_shallow(&self, at_uri: &str) -> Result<ThreadViewPost, ClientError> {
         let params = ParametersData {
             uri: at_uri.to_string(),
-            depth: Some(0.try_into().unwrap()),
-            parent_height: Some(100.try_into().unwrap()),
+            depth: Some(1.try_into().unwrap()),
+            parent_height: Some(1.try_into().unwrap()),
         };
 
         let result = self
@@ -95,34 +171,8 @@ impl BlueskyClient {
                 }
             })?;
 
-        self.convert_thread_response(result.thread.clone())
-    }
-
-    pub async fn get_thread_by_handle(
-        &self,
-        handle: &str,
-        post_id: &str,
-    ) -> Result<Thread, ClientError> {
-        let did = self.resolve_handle(handle).await?;
-        let at_uri = format!("at://{}/app.bsky.feed.post/{}", did, post_id);
-        self.get_thread(&at_uri).await
-    }
-
-    fn convert_thread_response(
-        &self,
-        thread: Union<OutputThreadRefs>,
-    ) -> Result<Thread, ClientError> {
-        match thread {
-            Union::Refs(OutputThreadRefs::AppBskyFeedDefsThreadViewPost(view)) => {
-                let mut posts = Vec::new();
-                let author = self.extract_author(&view)?;
-
-                self.collect_parent_posts(&view, &author.did, &mut posts)?;
-
-                posts.push(self.extract_post(&view)?);
-
-                Ok(Thread { posts, author })
-            }
+        match result.thread.clone() {
+            Union::Refs(OutputThreadRefs::AppBskyFeedDefsThreadViewPost(view)) => Ok(*view),
             Union::Refs(OutputThreadRefs::AppBskyFeedDefsNotFoundPost(_)) => {
                 Err(ClientError::NotFound)
             }
@@ -133,23 +183,27 @@ impl BlueskyClient {
         }
     }
 
-    fn collect_parent_posts(
-        &self,
-        view: &atrium_api::app::bsky::feed::defs::ThreadViewPost,
-        author_did: &str,
-        posts: &mut Vec<ThreadPost>,
-    ) -> Result<(), ClientError> {
-        if let Some(Union::Refs(ThreadViewPostParentRefs::ThreadViewPost(parent_view))) =
-            &view.parent
-        {
-            let parent_author_did = parent_view.post.author.did.as_str();
-
-            if parent_author_did == author_did {
-                self.collect_parent_posts(parent_view, author_did, posts)?;
-                posts.push(self.extract_post(parent_view)?);
+    /// Find the URI of the first self-reply in the post's replies
+    fn find_self_reply(&self, view: &ThreadViewPost, author_did: &str) -> Option<String> {
+        let replies = view.replies.as_ref()?;
+        for reply in replies {
+            if let Union::Refs(ThreadViewPostRepliesItem::ThreadViewPost(reply_view)) = reply {
+                if reply_view.post.author.did.as_str() == author_did {
+                    return Some(reply_view.post.uri.clone());
+                }
             }
         }
-        Ok(())
+        None
+    }
+
+    pub async fn get_thread_by_handle(
+        &self,
+        handle: &str,
+        post_id: &str,
+    ) -> Result<Thread, ClientError> {
+        let did = self.resolve_handle(handle).await?;
+        let at_uri = format!("at://{}/app.bsky.feed.post/{}", did, post_id);
+        self.get_thread(&at_uri).await
     }
 
     fn extract_author(
