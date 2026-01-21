@@ -1,0 +1,25 @@
+[package]
+name = "skeet-longer"
+version = "0.1.0"
+edition = "2021"
+description = "Bluesky thread concatenator web service"
+license = "MIT"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+thiserror = "2"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
+[[bin]]
+name = "skeet-longer"
+path = "src/main.rs"
+
+[lib]
+name = "skeet_longer"
+path = "src/lib.rs"
