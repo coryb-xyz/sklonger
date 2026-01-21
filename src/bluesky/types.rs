@@ -15,6 +15,44 @@ pub struct ThreadPost {
     pub reply_count: Option<u32>,
     pub repost_count: Option<u32>,
     pub like_count: Option<u32>,
+    pub embed: Option<Embed>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Embed {
+    Images(Vec<EmbedImage>),
+    Video(EmbedVideo),
+    External(EmbedExternal),
+}
+
+#[derive(Debug, Clone)]
+pub struct EmbedImage {
+    pub thumb_url: String,
+    pub fullsize_url: String,
+    pub alt: String,
+    pub aspect_ratio: Option<AspectRatio>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EmbedVideo {
+    pub thumbnail_url: Option<String>,
+    pub playlist_url: String,
+    pub alt: Option<String>,
+    pub aspect_ratio: Option<AspectRatio>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EmbedExternal {
+    pub uri: String,
+    pub title: String,
+    pub description: String,
+    pub thumb_url: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AspectRatio {
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Clone)]

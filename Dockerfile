@@ -33,7 +33,7 @@ RUN touch src/main.rs && \
 # =============================================================================
 # Stage 2: Runtime
 # =============================================================================
-FROM gcr.io/distroless/cc-debian12:nonroot
+FROM ghcr.io/docker-hardened-images/debian-base:bookworm
 
 # Copy the compiled binary
 COPY --from=builder /app/target/release/skeet-longer /app/skeet-longer
@@ -43,8 +43,8 @@ WORKDIR /app
 # Expose the default port (actual port configured via env var)
 EXPOSE 8080
 
-# Run as non-root (distroless:nonroot already runs as uid 65532)
-USER nonroot
+# Run as non-root user
+USER 65532:65532
 
 # Set default environment variables
 ENV PORT=8080 \

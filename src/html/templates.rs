@@ -94,18 +94,14 @@ header {
 }
 
 .post {
-    padding: 16px 0;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.post:last-child {
-    border-bottom: none;
+    padding: 8px 0;
 }
 
 .post-text {
-    font-size: 15px;
+    font-size: 16px;
     white-space: pre-wrap;
     word-wrap: break-word;
+    line-height: 1.7;
 }
 
 .post-text a {
@@ -118,15 +114,123 @@ header {
 }
 
 .post-meta {
-    margin-top: 12px;
-    font-size: 13px;
+    margin-top: 8px;
+    font-size: 11px;
     color: var(--text-muted);
     display: flex;
-    gap: 16px;
+    gap: 12px;
+    opacity: 0.7;
 }
 
 .post-meta time {
+    color: var(--text-muted);
+}
+
+/* Embed styles */
+.embed-images {
+    margin-top: 12px;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.embed-images.single .embed-image-link {
+    display: block;
+}
+
+.embed-images.double {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+}
+
+.embed-images.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+}
+
+.embed-image-link {
+    display: block;
+    line-height: 0;
+}
+
+.embed-image {
+    width: 100%;
+    height: auto;
+    max-width: 75dvw;
+    max-height: 75dvh;
+    object-fit: cover;
+    background-color: var(--bg-secondary);
+}
+
+.embed-images.single .embed-image {
+    max-width: 75dvw;
+    max-height: 75dvh;
+    object-fit: contain;
+}
+
+.embed-video {
+    margin-top: 12px;
+    border-radius: 12px;
+    overflow: hidden;
+    background-color: var(--bg-secondary);
+    max-width: 75dvw;
+    max-height: 75dvh;
+}
+
+.embed-video video {
+    width: 100%;
+    height: 100%;
+    max-width: 75dvw;
+    max-height: 75dvh;
+    display: block;
+}
+
+.embed-external {
+    display: flex;
+    margin-top: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    transition: background-color 0.15s ease;
+}
+
+.embed-external:hover {
+    background-color: var(--bg-secondary);
+}
+
+.external-thumb {
+    width: 120px;
+    height: 80px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.external-info {
+    padding: 10px 14px;
+    min-width: 0;
+}
+
+.external-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.external-description {
+    font-size: 12px;
     color: var(--text-secondary);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
 }
 
 footer {
@@ -182,6 +286,10 @@ footer a:hover {
 
     header, footer {
         border: none;
+    }
+
+    .embed-video {
+        display: none;
     }
 }
 "#;

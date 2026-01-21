@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use atrium_api::app::bsky::feed::defs::{
-    ThreadViewPost, ThreadViewPostParentRefs, ThreadViewPostRepliesItem,
+    PostViewEmbedRefs, ThreadViewPost, ThreadViewPostParentRefs, ThreadViewPostRepliesItem,
 };
 use atrium_api::app::bsky::feed::get_post_thread::{OutputThreadRefs, ParametersData};
 use atrium_api::client::AtpServiceClient;
@@ -11,7 +11,7 @@ use atrium_xrpc_client::reqwest::ReqwestClient;
 use chrono::{DateTime, Utc};
 use thiserror::Error;
 
-use super::types::{Author, Thread, ThreadPost};
+use super::types::{AspectRatio, Author, Embed, EmbedExternal, EmbedImage, EmbedVideo, Thread, ThreadPost};
 
 #[derive(Error, Debug)]
 pub enum ClientError {
@@ -226,6 +226,7 @@ impl BlueskyClient {
         let post = &view.post;
 
         let (text, created_at) = self.extract_post_record(&post.record)?;
+        let embed = self.extract_embed(&post.embed);
 
         Ok(ThreadPost {
             uri: post.uri.clone(),
@@ -235,7 +236,93 @@ impl BlueskyClient {
             reply_count: post.reply_count.map(|v| v as u32),
             repost_count: post.repost_count.map(|v| v as u32),
             like_count: post.like_count.map(|v| v as u32),
+            embed,
         })
+    }
+
+    fn extract_embed(
+        &self,
+        embed: &Option<Union<PostViewEmbedRefs>>,
+    ) -> Option<Embed> {
+        let embed = embed.as_ref()?;
+
+        match embed {
+            Union::Refs(PostViewEmbedRefs::AppBskyEmbedImagesView(images_view)) => {
+                let images = images_view
+                    .images
+                    .iter()
+                    .map(|img| EmbedImage {
+                        thumb_url: img.thumb.clone(),
+                        fullsize_url: img.fullsize.clone(),
+                        alt: img.alt.clone(),
+                        aspect_ratio: img.aspect_ratio.as_ref().map(|ar| AspectRatio {
+                            width: ar.width.get() as u32,
+                            height: ar.height.get() as u32,
+                        }),
+                    })
+                    .collect();
+                Some(Embed::Images(images))
+            }
+            Union::Refs(PostViewEmbedRefs::AppBskyEmbedVideoView(video_view)) => {
+                Some(Embed::Video(EmbedVideo {
+                    thumbnail_url: video_view.thumbnail.clone(),
+                    playlist_url: video_view.playlist.clone(),
+                    alt: video_view.alt.clone(),
+                    aspect_ratio: video_view.aspect_ratio.as_ref().map(|ar| AspectRatio {
+                        width: ar.width.get() as u32,
+                        height: ar.height.get() as u32,
+                    }),
+                }))
+            }
+            Union::Refs(PostViewEmbedRefs::AppBskyEmbedExternalView(external_view)) => {
+                Some(Embed::External(EmbedExternal {
+                    uri: external_view.external.uri.clone(),
+                    title: external_view.external.title.clone(),
+                    description: external_view.external.description.clone(),
+                    thumb_url: external_view.external.thumb.clone(),
+                }))
+            }
+            Union::Refs(PostViewEmbedRefs::AppBskyEmbedRecordWithMediaView(record_with_media)) => {
+                // Extract the media part (images or video), ignore the quoted record
+                match &record_with_media.media {
+                    Union::Refs(
+                        atrium_api::app::bsky::embed::record_with_media::ViewMediaRefs::AppBskyEmbedImagesView(images_view),
+                    ) => {
+                        let images = images_view
+                            .images
+                            .iter()
+                            .map(|img| EmbedImage {
+                                thumb_url: img.thumb.clone(),
+                                fullsize_url: img.fullsize.clone(),
+                                alt: img.alt.clone(),
+                                aspect_ratio: img.aspect_ratio.as_ref().map(|ar| AspectRatio {
+                                    width: ar.width.get() as u32,
+                                    height: ar.height.get() as u32,
+                                }),
+                            })
+                            .collect();
+                        Some(Embed::Images(images))
+                    }
+                    Union::Refs(
+                        atrium_api::app::bsky::embed::record_with_media::ViewMediaRefs::AppBskyEmbedVideoView(video_view),
+                    ) => {
+                        Some(Embed::Video(EmbedVideo {
+                            thumbnail_url: video_view.thumbnail.clone(),
+                            playlist_url: video_view.playlist.clone(),
+                            alt: video_view.alt.clone(),
+                            aspect_ratio: video_view.aspect_ratio.as_ref().map(|ar| AspectRatio {
+                                width: ar.width.get() as u32,
+                                height: ar.height.get() as u32,
+                            }),
+                        }))
+                    }
+                    _ => None,
+                }
+            }
+            // Quoted records without media - skip for now
+            Union::Refs(PostViewEmbedRefs::AppBskyEmbedRecordView(_)) => None,
+            _ => None,
+        }
     }
 
     fn extract_post_record(

@@ -1,4 +1,4 @@
-use crate::bluesky::types::{Author, Thread, ThreadPost};
+use crate::bluesky::types::{Author, Embed, EmbedImage, Thread, ThreadPost};
 use crate::html::templates::base_template;
 
 pub fn render_thread(thread: &Thread) -> String {
@@ -67,6 +67,12 @@ fn render_header(author: &Author) -> String {
 fn render_post(post: &ThreadPost) -> String {
     let text = linkify_text(&html_escape::encode_text(&post.text));
 
+    let embed_html = post
+        .embed
+        .as_ref()
+        .map(render_embed)
+        .unwrap_or_default();
+
     let timestamp = post.created_at.format("%b %d, %Y at %H:%M UTC").to_string();
 
     let mut meta_parts = vec![format!(
@@ -90,11 +96,106 @@ fn render_post(post: &ThreadPost) -> String {
     format!(
         r#"<article class="post">
     <div class="post-text">{text}</div>
+    {embed}
     <div class="post-meta">{meta}</div>
 </article>
 "#,
         text = text,
+        embed = embed_html,
         meta = meta_parts.join(" &middot; ")
+    )
+}
+
+fn render_embed(embed: &Embed) -> String {
+    match embed {
+        Embed::Images(images) => render_images(images),
+        Embed::Video(video) => render_video(video),
+        Embed::External(external) => render_external(external),
+    }
+}
+
+fn render_images(images: &[EmbedImage]) -> String {
+    if images.is_empty() {
+        return String::new();
+    }
+
+    let grid_class = match images.len() {
+        1 => "embed-images single",
+        2 => "embed-images double",
+        _ => "embed-images grid",
+    };
+
+    let images_html: String = images
+        .iter()
+        .map(|img| {
+            let aspect_style = img
+                .aspect_ratio
+                .as_ref()
+                .map(|ar| format!("aspect-ratio: {} / {};", ar.width, ar.height))
+                .unwrap_or_default();
+
+            format!(
+                r#"<a href="{fullsize}" target="_blank" rel="noopener" class="embed-image-link">
+    <img src="{thumb}" alt="{alt}" class="embed-image" style="{style}" loading="lazy">
+</a>"#,
+                fullsize = html_escape::encode_quoted_attribute(&img.fullsize_url),
+                thumb = html_escape::encode_quoted_attribute(&img.thumb_url),
+                alt = html_escape::encode_quoted_attribute(&img.alt),
+                style = aspect_style
+            )
+        })
+        .collect();
+
+    format!(r#"<div class="{}">{}</div>"#, grid_class, images_html)
+}
+
+fn render_video(video: &crate::bluesky::types::EmbedVideo) -> String {
+    let aspect_style = video
+        .aspect_ratio
+        .as_ref()
+        .map(|ar| format!("aspect-ratio: {} / {};", ar.width, ar.height))
+        .unwrap_or_else(|| "aspect-ratio: 16 / 9;".to_string());
+
+    let alt_text = video.alt.as_deref().unwrap_or("Video");
+
+    // Use HLS.js for video playback since the playlist is m3u8
+    format!(
+        r#"<div class="embed-video" style="{style}">
+    <video controls playsinline preload="metadata" aria-label="{alt}">
+        <source src="{playlist}" type="application/x-mpegURL">
+        Your browser does not support HLS video.
+    </video>
+</div>"#,
+        style = aspect_style,
+        alt = html_escape::encode_quoted_attribute(alt_text),
+        playlist = html_escape::encode_quoted_attribute(&video.playlist_url)
+    )
+}
+
+fn render_external(external: &crate::bluesky::types::EmbedExternal) -> String {
+    let thumb_html = external
+        .thumb_url
+        .as_ref()
+        .map(|url| {
+            format!(
+                r#"<img src="{}" alt="" class="external-thumb" loading="lazy">"#,
+                html_escape::encode_quoted_attribute(url)
+            )
+        })
+        .unwrap_or_default();
+
+    format!(
+        r#"<a href="{uri}" target="_blank" rel="noopener" class="embed-external">
+    {thumb}
+    <div class="external-info">
+        <div class="external-title">{title}</div>
+        <div class="external-description">{description}</div>
+    </div>
+</a>"#,
+        uri = html_escape::encode_quoted_attribute(&external.uri),
+        thumb = thumb_html,
+        title = html_escape::encode_text(&external.title),
+        description = html_escape::encode_text(&external.description)
     )
 }
 
