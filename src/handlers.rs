@@ -6,9 +6,10 @@ use axum::{
 use serde::Deserialize;
 use tracing::{info, warn};
 
+use crate::bluesky::client::ClientError;
 use crate::bluesky::parse_bluesky_url;
 use crate::error::AppError;
-use crate::html::render_thread;
+use crate::html::{landing_page, render_thread};
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -22,50 +23,36 @@ pub struct ThreadPath {
     pub post_id: String,
 }
 
+fn map_client_error(e: ClientError) -> AppError {
+    warn!(error = %e, "failed to fetch thread");
+    match &e {
+        ClientError::NotFound => AppError::NotFound("post not found or deleted".to_string()),
+        ClientError::Blocked => AppError::NotFound("post is blocked".to_string()),
+        ClientError::RateLimited => AppError::RateLimited,
+        ClientError::Http(err) if err.is_connect() => {
+            AppError::ServiceUnavailable("cannot reach Bluesky API".to_string())
+        }
+        ClientError::Http(err) if err.is_timeout() => {
+            AppError::ServiceUnavailable("request timed out".to_string())
+        }
+        _ => AppError::Internal(e.into()),
+    }
+}
+
 pub async fn get_thread(
     State(state): State<AppState>,
     Query(params): Query<ThreadQuery>,
 ) -> Result<Html<String>, AppError> {
-    let url = params
-        .url
-        .ok_or_else(|| AppError::BadRequest("missing 'url' query parameter".to_string()))?;
+    let url = match params.url {
+        Some(u) if !u.is_empty() => u,
+        _ => return Ok(Html(landing_page())),
+    };
 
     info!(url = %url, "fetching thread");
 
     let parsed = parse_bluesky_url(&url).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    let thread = state
-        .client
-        .get_thread_by_handle(&parsed.handle, &parsed.post_id)
-        .await
-        .map_err(|e| {
-            warn!(error = %e, "failed to fetch thread");
-            match e {
-                crate::bluesky::client::ClientError::NotFound => {
-                    AppError::NotFound("post not found or deleted".to_string())
-                }
-                crate::bluesky::client::ClientError::Blocked => {
-                    AppError::NotFound("post is blocked".to_string())
-                }
-                crate::bluesky::client::ClientError::RateLimited => AppError::RateLimited,
-                crate::bluesky::client::ClientError::Http(ref err) if err.is_connect() => {
-                    AppError::ServiceUnavailable("cannot reach Bluesky API".to_string())
-                }
-                crate::bluesky::client::ClientError::Http(ref err) if err.is_timeout() => {
-                    AppError::ServiceUnavailable("request timed out".to_string())
-                }
-                _ => AppError::Internal(e.into()),
-            }
-        })?;
-
-    info!(
-        author = %thread.author.handle,
-        post_count = thread.posts.len(),
-        "thread fetched successfully"
-    );
-
-    let html = render_thread(&thread);
-    Ok(Html(html))
+    fetch_and_render_thread(&state, &parsed.handle, &parsed.post_id).await
 }
 
 pub async fn get_thread_by_path(
@@ -74,29 +61,19 @@ pub async fn get_thread_by_path(
 ) -> Result<Html<String>, AppError> {
     info!(handle = %params.handle, post_id = %params.post_id, "fetching thread by path");
 
+    fetch_and_render_thread(&state, &params.handle, &params.post_id).await
+}
+
+async fn fetch_and_render_thread(
+    state: &AppState,
+    handle: &str,
+    post_id: &str,
+) -> Result<Html<String>, AppError> {
     let thread = state
         .client
-        .get_thread_by_handle(&params.handle, &params.post_id)
+        .get_thread_by_handle(handle, post_id)
         .await
-        .map_err(|e| {
-            warn!(error = %e, "failed to fetch thread");
-            match e {
-                crate::bluesky::client::ClientError::NotFound => {
-                    AppError::NotFound("post not found or deleted".to_string())
-                }
-                crate::bluesky::client::ClientError::Blocked => {
-                    AppError::NotFound("post is blocked".to_string())
-                }
-                crate::bluesky::client::ClientError::RateLimited => AppError::RateLimited,
-                crate::bluesky::client::ClientError::Http(ref err) if err.is_connect() => {
-                    AppError::ServiceUnavailable("cannot reach Bluesky API".to_string())
-                }
-                crate::bluesky::client::ClientError::Http(ref err) if err.is_timeout() => {
-                    AppError::ServiceUnavailable("request timed out".to_string())
-                }
-                _ => AppError::Internal(e.into()),
-            }
-        })?;
+        .map_err(map_client_error)?;
 
     info!(
         author = %thread.author.handle,

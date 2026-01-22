@@ -1,4 +1,5 @@
 use std::env;
+use std::str::FromStr;
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
@@ -11,38 +12,30 @@ pub struct Config {
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
-    #[error("invalid PORT value: {0}")]
-    InvalidPort(String),
-    #[error("invalid REQUEST_TIMEOUT_SECONDS value: {0}")]
-    InvalidTimeout(String),
+    #[error("invalid {0} value: {1}")]
+    InvalidEnvVar(&'static str, String),
+}
+
+fn env_var_or_default(name: &str, default: &str) -> String {
+    env::var(name).unwrap_or_else(|_| default.to_string())
+}
+
+fn parse_env_or_default<T: FromStr>(name: &'static str, default: T) -> Result<T, ConfigError> {
+    match env::var(name) {
+        Ok(val) => val
+            .parse()
+            .map_err(|_| ConfigError::InvalidEnvVar(name, val)),
+        Err(_) => Ok(default),
+    }
 }
 
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
-        let port = match env::var("PORT") {
-            Ok(val) => val
-                .parse::<u16>()
-                .map_err(|_| ConfigError::InvalidPort(val))?,
-            Err(_) => 8080,
-        };
-
-        let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
-
-        let bluesky_api_url = env::var("BLUESKY_API_URL")
-            .unwrap_or_else(|_| "https://public.api.bsky.app".to_string());
-
-        let request_timeout_seconds = match env::var("REQUEST_TIMEOUT_SECONDS") {
-            Ok(val) => val
-                .parse::<u64>()
-                .map_err(|_| ConfigError::InvalidTimeout(val))?,
-            Err(_) => 10,
-        };
-
         Ok(Self {
-            port,
-            log_level,
-            bluesky_api_url,
-            request_timeout_seconds,
+            port: parse_env_or_default("PORT", 8080)?,
+            log_level: env_var_or_default("LOG_LEVEL", "info"),
+            bluesky_api_url: env_var_or_default("BLUESKY_API_URL", "https://public.api.bsky.app"),
+            request_timeout_seconds: parse_env_or_default("REQUEST_TIMEOUT_SECONDS", 10)?,
         })
     }
 }
@@ -52,14 +45,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_invalid_port_error() {
-        let err = ConfigError::InvalidPort("abc".to_string());
+    fn test_invalid_env_var_error() {
+        let err = ConfigError::InvalidEnvVar("PORT", "abc".to_string());
+        assert!(err.to_string().contains("PORT"));
         assert!(err.to_string().contains("abc"));
-    }
-
-    #[test]
-    fn test_invalid_timeout_error() {
-        let err = ConfigError::InvalidTimeout("xyz".to_string());
-        assert!(err.to_string().contains("xyz"));
     }
 }

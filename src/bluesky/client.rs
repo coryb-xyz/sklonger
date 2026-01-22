@@ -11,7 +11,9 @@ use atrium_xrpc_client::reqwest::ReqwestClient;
 use chrono::{DateTime, Utc};
 use thiserror::Error;
 
-use super::types::{AspectRatio, Author, Embed, EmbedExternal, EmbedImage, EmbedVideo, Thread, ThreadPost};
+use super::types::{
+    AspectRatio, Author, Embed, EmbedExternal, EmbedImage, EmbedVideo, Thread, ThreadPost,
+};
 
 #[derive(Error, Debug)]
 pub enum ClientError {
@@ -29,6 +31,44 @@ pub enum ClientError {
     InvalidResponse,
 }
 
+fn map_api_error(err_str: String) -> ClientError {
+    if err_str.contains("429") || err_str.contains("RateLimited") {
+        ClientError::RateLimited
+    } else {
+        ClientError::Api(err_str)
+    }
+}
+
+fn extract_images_from_view(
+    images: &[atrium_api::app::bsky::embed::images::ViewImage],
+) -> Vec<EmbedImage> {
+    images
+        .iter()
+        .map(|img| EmbedImage {
+            thumb_url: img.thumb.clone(),
+            fullsize_url: img.fullsize.clone(),
+            alt: img.alt.clone(),
+            aspect_ratio: img.aspect_ratio.as_ref().map(extract_aspect_ratio),
+        })
+        .collect()
+}
+
+fn extract_video_from_view(video_view: &atrium_api::app::bsky::embed::video::View) -> EmbedVideo {
+    EmbedVideo {
+        thumbnail_url: video_view.thumbnail.clone(),
+        playlist_url: video_view.playlist.clone(),
+        alt: video_view.alt.clone(),
+        aspect_ratio: video_view.aspect_ratio.as_ref().map(extract_aspect_ratio),
+    }
+}
+
+fn extract_aspect_ratio(ar: &atrium_api::app::bsky::embed::defs::AspectRatio) -> AspectRatio {
+    AspectRatio {
+        width: ar.width.get() as u32,
+        height: ar.height.get() as u32,
+    }
+}
+
 #[derive(Clone)]
 pub struct BlueskyClient {
     client: Arc<AtpServiceClient<ReqwestClient>>,
@@ -36,6 +76,8 @@ pub struct BlueskyClient {
 
 impl BlueskyClient {
     pub fn new(base_url: &str, _timeout: Duration) -> Result<Self, ClientError> {
+        // Note: timeout is currently unused as ReqwestClient uses its own defaults.
+        // This parameter is kept for future configuration needs.
         let xrpc_client = ReqwestClient::new(base_url);
         let client = Arc::new(AtpServiceClient::new(xrpc_client));
 
@@ -57,16 +99,7 @@ impl BlueskyClient {
             .identity
             .resolve_handle(params.into())
             .await
-            .map_err(|e| {
-                let err_str = e.to_string();
-                if err_str.contains("404") || err_str.contains("not found") {
-                    ClientError::NotFound
-                } else if err_str.contains("429") || err_str.contains("rate") {
-                    ClientError::RateLimited
-                } else {
-                    ClientError::Api(err_str)
-                }
-            })?;
+            .map_err(|e| map_api_error(e.to_string()))?;
 
         Ok(result.did.to_string())
     }
@@ -160,16 +193,7 @@ impl BlueskyClient {
             .feed
             .get_post_thread(params.into())
             .await
-            .map_err(|e| {
-                let err_str = e.to_string();
-                if err_str.contains("404") || err_str.contains("NotFound") {
-                    ClientError::NotFound
-                } else if err_str.contains("429") || err_str.contains("rate") {
-                    ClientError::RateLimited
-                } else {
-                    ClientError::Api(err_str)
-                }
-            })?;
+            .map_err(|e| map_api_error(e.to_string()))?;
 
         match result.thread.clone() {
             Union::Refs(OutputThreadRefs::AppBskyFeedDefsThreadViewPost(view)) => Ok(*view),
@@ -225,7 +249,7 @@ impl BlueskyClient {
     ) -> Result<ThreadPost, ClientError> {
         let post = &view.post;
 
-        let (text, created_at) = self.extract_post_record(&post.record)?;
+        let (text, created_at, langs) = self.extract_post_record(&post.record)?;
         let embed = self.extract_embed(&post.embed);
 
         Ok(ThreadPost {
@@ -237,42 +261,19 @@ impl BlueskyClient {
             repost_count: post.repost_count.map(|v| v as u32),
             like_count: post.like_count.map(|v| v as u32),
             embed,
+            langs,
         })
     }
 
-    fn extract_embed(
-        &self,
-        embed: &Option<Union<PostViewEmbedRefs>>,
-    ) -> Option<Embed> {
+    fn extract_embed(&self, embed: &Option<Union<PostViewEmbedRefs>>) -> Option<Embed> {
         let embed = embed.as_ref()?;
 
         match embed {
             Union::Refs(PostViewEmbedRefs::AppBskyEmbedImagesView(images_view)) => {
-                let images = images_view
-                    .images
-                    .iter()
-                    .map(|img| EmbedImage {
-                        thumb_url: img.thumb.clone(),
-                        fullsize_url: img.fullsize.clone(),
-                        alt: img.alt.clone(),
-                        aspect_ratio: img.aspect_ratio.as_ref().map(|ar| AspectRatio {
-                            width: ar.width.get() as u32,
-                            height: ar.height.get() as u32,
-                        }),
-                    })
-                    .collect();
-                Some(Embed::Images(images))
+                Some(Embed::Images(extract_images_from_view(&images_view.images)))
             }
             Union::Refs(PostViewEmbedRefs::AppBskyEmbedVideoView(video_view)) => {
-                Some(Embed::Video(EmbedVideo {
-                    thumbnail_url: video_view.thumbnail.clone(),
-                    playlist_url: video_view.playlist.clone(),
-                    alt: video_view.alt.clone(),
-                    aspect_ratio: video_view.aspect_ratio.as_ref().map(|ar| AspectRatio {
-                        width: ar.width.get() as u32,
-                        height: ar.height.get() as u32,
-                    }),
-                }))
+                Some(Embed::Video(extract_video_from_view(video_view)))
             }
             Union::Refs(PostViewEmbedRefs::AppBskyEmbedExternalView(external_view)) => {
                 Some(Embed::External(EmbedExternal {
@@ -283,44 +284,26 @@ impl BlueskyClient {
                 }))
             }
             Union::Refs(PostViewEmbedRefs::AppBskyEmbedRecordWithMediaView(record_with_media)) => {
-                // Extract the media part (images or video), ignore the quoted record
-                match &record_with_media.media {
-                    Union::Refs(
-                        atrium_api::app::bsky::embed::record_with_media::ViewMediaRefs::AppBskyEmbedImagesView(images_view),
-                    ) => {
-                        let images = images_view
-                            .images
-                            .iter()
-                            .map(|img| EmbedImage {
-                                thumb_url: img.thumb.clone(),
-                                fullsize_url: img.fullsize.clone(),
-                                alt: img.alt.clone(),
-                                aspect_ratio: img.aspect_ratio.as_ref().map(|ar| AspectRatio {
-                                    width: ar.width.get() as u32,
-                                    height: ar.height.get() as u32,
-                                }),
-                            })
-                            .collect();
-                        Some(Embed::Images(images))
-                    }
-                    Union::Refs(
-                        atrium_api::app::bsky::embed::record_with_media::ViewMediaRefs::AppBskyEmbedVideoView(video_view),
-                    ) => {
-                        Some(Embed::Video(EmbedVideo {
-                            thumbnail_url: video_view.thumbnail.clone(),
-                            playlist_url: video_view.playlist.clone(),
-                            alt: video_view.alt.clone(),
-                            aspect_ratio: video_view.aspect_ratio.as_ref().map(|ar| AspectRatio {
-                                width: ar.width.get() as u32,
-                                height: ar.height.get() as u32,
-                            }),
-                        }))
-                    }
-                    _ => None,
-                }
+                self.extract_media_from_record_with_media(record_with_media)
             }
-            // Quoted records without media - skip for now
-            Union::Refs(PostViewEmbedRefs::AppBskyEmbedRecordView(_)) => None,
+            // Quoted records without media and any other types - skip for now
+            _ => None,
+        }
+    }
+
+    fn extract_media_from_record_with_media(
+        &self,
+        record_with_media: &atrium_api::app::bsky::embed::record_with_media::View,
+    ) -> Option<Embed> {
+        use atrium_api::app::bsky::embed::record_with_media::ViewMediaRefs;
+
+        match &record_with_media.media {
+            Union::Refs(ViewMediaRefs::AppBskyEmbedImagesView(images_view)) => {
+                Some(Embed::Images(extract_images_from_view(&images_view.images)))
+            }
+            Union::Refs(ViewMediaRefs::AppBskyEmbedVideoView(video_view)) => {
+                Some(Embed::Video(extract_video_from_view(video_view)))
+            }
             _ => None,
         }
     }
@@ -328,7 +311,7 @@ impl BlueskyClient {
     fn extract_post_record(
         &self,
         record: &atrium_api::types::Unknown,
-    ) -> Result<(String, DateTime<Utc>), ClientError> {
+    ) -> Result<(String, DateTime<Utc>, Vec<String>), ClientError> {
         let value = serde_json::to_value(record).map_err(|_| ClientError::InvalidResponse)?;
 
         let text = value
@@ -344,6 +327,16 @@ impl BlueskyClient {
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or_else(Utc::now);
 
-        Ok((text, created_at))
+        let langs = value
+            .get("langs")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok((text, created_at, langs))
     }
 }

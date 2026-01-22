@@ -16,6 +16,8 @@ pub struct ThreadPost {
     pub repost_count: Option<u32>,
     pub like_count: Option<u32>,
     pub embed: Option<Embed>,
+    /// BCP-47 language codes for the post content
+    pub langs: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +65,13 @@ pub struct Author {
     pub avatar_url: Option<String>,
 }
 
+impl Author {
+    /// Returns the URL to the author's Bluesky profile
+    pub fn profile_url(&self) -> String {
+        format!("https://bsky.app/profile/{}", self.handle)
+    }
+}
+
 impl Thread {
     pub fn original_post_url(&self) -> Option<String> {
         self.posts.first().map(|post| {
@@ -72,5 +81,14 @@ impl Thread {
                 self.author.handle, post_id
             )
         })
+    }
+
+    /// Returns the primary language of the thread (from the first post).
+    /// Returns None if no language is specified.
+    pub fn primary_language(&self) -> Option<&str> {
+        self.posts
+            .first()
+            .and_then(|post| post.langs.first())
+            .map(|s| s.as_str())
     }
 }

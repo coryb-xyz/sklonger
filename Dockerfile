@@ -1,7 +1,7 @@
 # =============================================================================
 # Stage 1: Build
 # =============================================================================
-FROM rust:1.83-bookworm AS builder
+FROM rust:1.85-bookworm AS builder
 
 WORKDIR /app
 
@@ -26,14 +26,14 @@ RUN cargo build --release && \
 # Copy actual source code
 COPY src ./src
 
-# Touch main.rs to invalidate cache and rebuild with real code
-RUN touch src/main.rs && \
+# Touch source files to invalidate cache and rebuild with real code
+RUN touch src/main.rs src/lib.rs && \
     cargo build --release
 
 # =============================================================================
 # Stage 2: Runtime
 # =============================================================================
-FROM ghcr.io/docker-hardened-images/debian-base:bookworm
+FROM gcr.io/distroless/cc-debian12
 
 # Copy the compiled binary
 COPY --from=builder /app/target/release/skeet-longer /app/skeet-longer
@@ -43,7 +43,7 @@ WORKDIR /app
 # Expose the default port (actual port configured via env var)
 EXPOSE 8080
 
-# Run as non-root user
+# Distroless images run as non-root by default (uid 65532)
 USER 65532:65532
 
 # Set default environment variables
