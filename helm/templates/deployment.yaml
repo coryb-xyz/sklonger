@@ -1,16 +1,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "skeet-longer.fullname" . }}
+  name: {{ include "sklonger.fullname" . }}
   labels:
-    {{- include "skeet-longer.labels" . | nindent 4 }}
+    {{- include "sklonger.labels" . | nindent 4 }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
     matchLabels:
-      {{- include "skeet-longer.selectorLabels" . | nindent 6 }}
+      {{- include "sklonger.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
@@ -19,14 +19,14 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- include "skeet-longer.selectorLabels" . | nindent 8 }}
+        {{- include "sklonger.selectorLabels" . | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.serviceAccount.create }}
-      serviceAccountName: {{ include "skeet-longer.serviceAccountName" . }}
+      serviceAccountName: {{ include "sklonger.serviceAccountName" . }}
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -42,7 +42,7 @@ spec:
               protocol: TCP
           envFrom:
             - configMapRef:
-                name: {{ include "skeet-longer.fullname" . }}-config
+                name: {{ include "sklonger.fullname" . }}-config
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:

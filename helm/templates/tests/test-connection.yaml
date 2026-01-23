@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: "{{ include "skeet-longer.fullname" . }}-test-connection"
+  name: "{{ include "sklonger.fullname" . }}-test-connection"
   labels:
-    {{- include "skeet-longer.labels" . | nindent 4 }}
+    {{- include "sklonger.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": test
 spec:
@@ -11,5 +11,5 @@ spec:
     - name: wget
       image: busybox
       command: ['wget']
-      args: ['{{ include "skeet-longer.fullname" . }}:{{ .Values.service.port }}']
+      args: ['{{ include "sklonger.fullname" . }}:{{ .Values.service.port }}']
   restartPolicy: Never
