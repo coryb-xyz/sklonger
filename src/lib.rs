@@ -28,9 +28,10 @@ pub fn create_app(config: &Config) -> anyhow::Result<Router> {
     Ok(Router::new()
         .route("/", get(handlers::get_thread))
         .route("/thread", get(handlers::get_thread))
+        // Use streaming handler for direct path access (most common use case)
         .route(
             "/profile/{handle}/post/{post_id}",
-            get(handlers::get_thread_by_path),
+            get(handlers::get_thread_streaming),
         )
         .route("/health/live", get(handlers::health_live))
         .route("/health/ready", get(handlers::health_ready))

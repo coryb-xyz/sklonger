@@ -35,6 +35,11 @@ html-escape = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 regex-lite = "0.1"
 
+# Streaming
+async-stream = "0.3"
+futures = "0.3"
+tokio-stream = "0.1"
+
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 

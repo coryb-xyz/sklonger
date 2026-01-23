@@ -92,3 +92,14 @@ impl Thread {
             .map(|s| s.as_str())
     }
 }
+
+/// Events emitted during streaming thread fetching
+#[derive(Debug, Clone)]
+pub enum StreamEvent {
+    /// Thread header with author information
+    Header(Author),
+    /// A single post in the thread
+    Post(ThreadPost),
+    /// Thread fetching is complete
+    Done,
+}

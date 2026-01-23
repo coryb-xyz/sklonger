@@ -481,6 +481,28 @@ footer a:hover {
     text-decoration: underline;
 }
 
+/* Streaming loading indicator */
+.loading-indicator {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+
+.stream-error {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    background-color: var(--bg-secondary);
+    border-radius: 8px;
+    margin: 20px 0;
+}
+
 /* Theme toggle switch */
 .theme-toggle {
     position: relative;
@@ -866,4 +888,166 @@ pub fn error_page(status_code: u16, title: &str, message: &str) -> String {
         message = html_escape::encode_text(message)
     );
     base_template(&format!("{} - {}", status_code, title), &content)
+}
+
+/// Options for streaming HTML head
+pub struct StreamingHeadOptions<'a> {
+    pub author_handle: &'a str,
+    pub author_display_name: Option<&'a str>,
+    pub avatar_url: Option<&'a str>,
+    pub profile_url: &'a str,
+    pub lang: Option<&'a str>,
+}
+
+/// Render the HTML head and header for streaming response.
+/// This is sent immediately when we know the author info.
+pub fn streaming_head(options: StreamingHeadOptions) -> String {
+    let title = format!(
+        "Thread by @{} - skeet-longer",
+        html_escape::encode_text(options.author_handle)
+    );
+
+    let author_name = options
+        .author_display_name
+        .unwrap_or(options.author_handle);
+
+    let avatar_html = match options.avatar_url {
+        Some(url) => format!(
+            r#"<img class="avatar" src="{}" alt="{}'s avatar">"#,
+            html_escape::encode_quoted_attribute(url),
+            html_escape::encode_quoted_attribute(author_name)
+        ),
+        None => {
+            let initial = author_name
+                .chars()
+                .next()
+                .unwrap_or('?')
+                .to_uppercase()
+                .to_string();
+            format!(
+                r#"<div class="avatar-placeholder" role="img" aria-label="{}'s avatar">{}</div>"#,
+                html_escape::encode_quoted_attribute(author_name),
+                initial
+            )
+        }
+    };
+
+    let favicon_tag = options
+        .avatar_url
+        .map(|url| {
+            format!(
+                r#"<link rel="icon" type="image/png" href="{}">"#,
+                html_escape::encode_quoted_attribute(url)
+            )
+        })
+        .unwrap_or_default();
+
+    let lang = options.lang.unwrap_or("en");
+
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="{lang}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{title}</title>
+    {favicon}
+    <script>{theme_init}</script>
+    <style>{css}</style>
+</head>
+<body>
+<header>
+    <a href="/" class="home-link" aria-label="Home">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M11.47 3.84a.75.75 0 011.06 0l8.69 8.69a.75.75 0 101.06-1.06l-8.689-8.69a2.25 2.25 0 00-3.182 0l-8.69 8.69a.75.75 0 001.061 1.06l8.69-8.69z" />
+            <path d="M12 5.432l8.159 8.159c.03.03.06.058.091.086v6.198c0 1.035-.84 1.875-1.875 1.875H15a.75.75 0 01-.75-.75v-4.5a.75.75 0 00-.75-.75h-3a.75.75 0 00-.75.75V21a.75.75 0 01-.75.75H5.625a1.875 1.875 0 01-1.875-1.875v-6.198a2.29 2.29 0 00.091-.086L12 5.43z" />
+        </svg>
+    </a>
+    <a href="{profile_url}" class="author" target="_blank" rel="noopener">
+        {avatar}
+        <div class="author-info">
+            <span class="display-name">{display_name}</span>
+            <span class="handle">@{handle}</span>
+        </div>
+    </a>
+    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode" role="switch" aria-checked="false">
+        <span class="theme-toggle-knob" aria-hidden="true">
+            <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z" />
+            </svg>
+            <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6a9 9 0 009 9 8.97 8.97 0 003.463-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.701-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z" clip-rule="evenodd" />
+            </svg>
+        </span>
+    </button>
+</header>
+<main class="thread">
+"#,
+        lang = html_escape::encode_quoted_attribute(lang),
+        title = html_escape::encode_text(&title),
+        favicon = favicon_tag,
+        theme_init = THEME_SCRIPT,
+        css = CSS_STYLES,
+        profile_url = html_escape::encode_quoted_attribute(options.profile_url),
+        avatar = avatar_html,
+        display_name = html_escape::encode_text(author_name),
+        handle = html_escape::encode_text(options.author_handle)
+    )
+}
+
+/// Render the closing HTML for a streaming response.
+/// This includes the footer and closing tags.
+pub fn streaming_footer(original_post_url: &str) -> String {
+    format!(
+        r#"</main>
+<footer>
+    <a href="{url}" target="_blank" rel="noopener">View original on Bluesky</a>
+</footer>
+<script>
+document.getElementById('loading-indicator')?.remove();
+{theme_toggle}
+</script>
+</body>
+</html>"#,
+        url = html_escape::encode_quoted_attribute(original_post_url),
+        theme_toggle = THEME_TOGGLE_SCRIPT
+    )
+}
+
+/// Render the loading indicator to show at the bottom of the thread while more posts load.
+pub fn streaming_loading_indicator() -> &'static str {
+    r#"<div class="loading-indicator" id="loading-indicator">Loading more...</div>
+"#
+}
+
+/// Render a post that should be inserted before the loading indicator.
+/// Uses a small inline script to move the loading indicator to the end.
+pub fn streaming_post_before_indicator(post_html: &str) -> String {
+    // The script moves the loading indicator to be after the newly added post
+    // by appending it to its parent (which moves it to the end)
+    format!(
+        r#"{post_html}<script>(function(){{var l=document.getElementById('loading-indicator');if(l)l.parentNode.appendChild(l);}})();</script>
+"#,
+        post_html = post_html
+    )
+}
+
+/// Render an error that occurred mid-stream.
+/// This closes the HTML properly so the page is still valid.
+pub fn streaming_error(message: &str) -> String {
+    format!(
+        r#"<div class="stream-error">
+    <p>Error loading thread: {}</p>
+</div>
+</main>
+<footer>
+    <a href="/">Try another thread</a>
+</footer>
+<script>
+document.getElementById('loading-indicator')?.remove();
+</script>
+</body>
+</html>"#,
+        html_escape::encode_text(message)
+    )
 }

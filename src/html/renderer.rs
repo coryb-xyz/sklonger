@@ -88,7 +88,9 @@ fn render_header(author: &Author) -> String {
     )
 }
 
-fn render_post(post: &ThreadPost, author_handle: &str) -> String {
+/// Render a single post as an HTML article element.
+/// This is public to support streaming rendering.
+pub fn render_post(post: &ThreadPost, author_handle: &str) -> String {
     let text = linkify_text(&html_escape::encode_text(&post.text));
     let embed_html = post.embed.as_ref().map(render_embed).unwrap_or_default();
     let timestamp = post.created_at.format("%b %d, %Y at %H:%M UTC").to_string();

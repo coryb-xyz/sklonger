@@ -12,7 +12,8 @@ use chrono::{DateTime, Utc};
 use thiserror::Error;
 
 use super::types::{
-    AspectRatio, Author, Embed, EmbedExternal, EmbedImage, EmbedVideo, Thread, ThreadPost,
+    AspectRatio, Author, Embed, EmbedExternal, EmbedImage, EmbedVideo, StreamEvent, Thread,
+    ThreadPost,
 };
 
 #[derive(Error, Debug)]
@@ -228,6 +229,38 @@ impl BlueskyClient {
         let did = self.resolve_handle(handle).await?;
         let at_uri = format!("at://{}/app.bsky.feed.post/{}", did, post_id);
         self.get_thread(&at_uri).await
+    }
+
+    /// Stream thread events as they are fetched from the API.
+    /// This allows for progressive rendering of the thread.
+    /// Takes ownership of self (cheap clone via Arc) to allow the stream to be 'static.
+    pub fn get_thread_streaming(
+        self,
+        handle: String,
+        post_id: String,
+    ) -> impl futures::Stream<Item = Result<StreamEvent, ClientError>> {
+        async_stream::try_stream! {
+            let did = self.resolve_handle(&handle).await?;
+            let at_uri = format!("at://{}/app.bsky.feed.post/{}", did, post_id);
+
+            let root_uri = self.find_root_uri_async(&at_uri).await?;
+            let root_view = self.fetch_post_thread_shallow(&root_uri).await?;
+            let author = self.extract_author(&root_view)?;
+            let author_did = author.did.clone();
+
+            yield StreamEvent::Header(author);
+            yield StreamEvent::Post(self.extract_post(&root_view)?);
+
+            let mut current_uri = self.find_self_reply(&root_view, &author_did);
+
+            while let Some(uri) = current_uri {
+                let view = self.fetch_post_thread_shallow(&uri).await?;
+                yield StreamEvent::Post(self.extract_post(&view)?);
+                current_uri = self.find_self_reply(&view, &author_did);
+            }
+
+            yield StreamEvent::Done;
+        }
     }
 
     fn extract_author(
