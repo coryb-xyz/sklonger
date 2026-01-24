@@ -1,7 +1,8 @@
 # Default values for sklonger.
 # Bluesky thread concatenator web service
 
-replicaCount: 2
+# Set to 1 for resource-constrained nodes; 2+ for HA in production
+replicaCount: 1
 
 image:
   repository: ghcr.io/coryb-xyz/sklonger
@@ -61,13 +62,15 @@ ingress:
   #    hosts:
   #      - sklonger.local
 
+# Resource defaults tuned for lightweight Rust binary on constrained nodes
+# Adjust based on actual usage via: kubectl top pods
 resources:
   limits:
-    cpu: 200m
-    memory: 128Mi
-  requests:
-    cpu: 50m
+    cpu: 100m
     memory: 64Mi
+  requests:
+    cpu: 10m
+    memory: 32Mi
 
 livenessProbe:
   httpGet:
