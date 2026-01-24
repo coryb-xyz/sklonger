@@ -907,9 +907,7 @@ pub fn streaming_head(options: StreamingHeadOptions) -> String {
         html_escape::encode_text(options.author_handle)
     );
 
-    let author_name = options
-        .author_display_name
-        .unwrap_or(options.author_handle);
+    let author_name = options.author_display_name.unwrap_or(options.author_handle);
 
     let avatar_html = match options.avatar_url {
         Some(url) => format!(
