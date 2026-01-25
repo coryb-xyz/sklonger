@@ -4,6 +4,7 @@ pub mod error;
 pub mod handlers;
 pub mod html;
 pub mod logging;
+pub mod pwa;
 
 use std::time::Duration;
 
@@ -35,5 +36,11 @@ pub fn create_app(config: &Config) -> anyhow::Result<Router> {
         )
         .route("/health/live", get(handlers::health_live))
         .route("/health/ready", get(handlers::health_ready))
+        // PWA routes
+        .route("/manifest.json", get(handlers::manifest))
+        .route("/sw.js", get(handlers::service_worker))
+        .route("/icon.svg", get(handlers::icon))
+        // Web Share Target endpoint
+        .route("/share", get(handlers::share_target))
         .with_state(state))
 }

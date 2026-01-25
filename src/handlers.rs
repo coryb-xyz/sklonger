@@ -2,7 +2,7 @@ use axum::{
     body::Body,
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse, Redirect, Response},
 };
 use serde::Deserialize;
 use tracing::{info, warn};
@@ -184,6 +184,88 @@ pub async fn health_ready(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
+// PWA handlers
+
+/// Serve the PWA manifest for Android Web Share Target support.
+pub async fn manifest() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/manifest+json")],
+        crate::pwa::MANIFEST_JSON,
+    )
+}
+
+/// Serve the service worker for PWA installability.
+pub async fn service_worker() -> impl IntoResponse {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "application/javascript"),
+            (
+                axum::http::header::HeaderName::from_static("service-worker-allowed"),
+                "/",
+            ),
+        ],
+        crate::pwa::SERVICE_WORKER_JS,
+    )
+}
+
+/// Serve the PWA icon.
+pub async fn icon() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
+        crate::pwa::APP_ICON_SVG,
+    )
+}
+
+#[derive(Deserialize)]
+pub struct ShareQuery {
+    pub url: Option<String>,
+    pub text: Option<String>,
+    #[allow(dead_code)]
+    pub title: Option<String>,
+}
+
+/// Handle Web Share Target API requests.
+/// Extracts Bluesky URL from shared content and redirects to thread view.
+pub async fn share_target(Query(params): Query<ShareQuery>) -> Result<Redirect, AppError> {
+    let url = extract_bluesky_url(&params)?;
+    info!(url = %url, "share target received Bluesky URL");
+
+    let encoded_url = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("url", &url)
+        .finish();
+    let redirect_url = format!("/?{}", encoded_url);
+
+    Ok(Redirect::to(&redirect_url))
+}
+
+/// Extract a Bluesky URL from share target parameters.
+/// Checks the url param first, then searches the text param for bsky.app URLs.
+fn extract_bluesky_url(params: &ShareQuery) -> Result<String, AppError> {
+    // Check url param first
+    if let Some(url) = &params.url {
+        if url.contains("bsky.app") {
+            return Ok(url.clone());
+        }
+    }
+
+    // Check text param for bsky.app URL
+    if let Some(text) = &params.text {
+        if let Some(url) = find_bluesky_url_in_text(text) {
+            return Ok(url);
+        }
+    }
+
+    Err(AppError::BadRequest(
+        "No Bluesky URL found in shared content".to_string(),
+    ))
+}
+
+/// Find a bsky.app URL in text using regex.
+fn find_bluesky_url_in_text(text: &str) -> Option<String> {
+    let re = regex_lite::Regex::new(r"https?://bsky\.app/profile/[^\s]+/post/[^\s]+").ok()?;
+    re.find(text).map(|m| m.as_str().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,5 +289,81 @@ mod tests {
             .expect("request should succeed");
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_extract_bluesky_url_from_url_param() {
+        let params = ShareQuery {
+            url: Some("https://bsky.app/profile/user.bsky.social/post/abc123".to_string()),
+            text: None,
+            title: None,
+        };
+        let result = extract_bluesky_url(&params);
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "https://bsky.app/profile/user.bsky.social/post/abc123"
+        );
+    }
+
+    #[test]
+    fn test_extract_bluesky_url_from_text() {
+        let params = ShareQuery {
+            url: None,
+            text: Some(
+                "Check this out: https://bsky.app/profile/user.bsky.social/post/abc123 cool!"
+                    .to_string(),
+            ),
+            title: None,
+        };
+        let result = extract_bluesky_url(&params);
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "https://bsky.app/profile/user.bsky.social/post/abc123"
+        );
+    }
+
+    #[test]
+    fn test_extract_bluesky_url_not_found() {
+        let params = ShareQuery {
+            url: Some("https://twitter.com/user/status/123".to_string()),
+            text: None,
+            title: None,
+        };
+        let result = extract_bluesky_url(&params);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_bluesky_url_prefers_url_param() {
+        let params = ShareQuery {
+            url: Some("https://bsky.app/profile/first.bsky.social/post/111".to_string()),
+            text: Some(
+                "Other link: https://bsky.app/profile/second.bsky.social/post/222".to_string(),
+            ),
+            title: None,
+        };
+        let result = extract_bluesky_url(&params);
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("first.bsky.social"));
+    }
+
+    #[test]
+    fn test_find_bluesky_url_in_text() {
+        let text = "Look at this https://bsky.app/profile/test.bsky.social/post/xyz and more";
+        let result = find_bluesky_url_in_text(text);
+        assert!(result.is_some());
+        assert_eq!(
+            result.unwrap(),
+            "https://bsky.app/profile/test.bsky.social/post/xyz"
+        );
+    }
+
+    #[test]
+    fn test_find_bluesky_url_in_text_no_match() {
+        let text = "No Bluesky links here, just https://example.com";
+        let result = find_bluesky_url_in_text(text);
+        assert!(result.is_none());
     }
 }
