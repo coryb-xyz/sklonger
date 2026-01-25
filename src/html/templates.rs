@@ -793,6 +793,23 @@ const THEME_TOGGLE_SCRIPT: &str = r#"
 })();
 "#;
 
+/// PWA meta tags for manifest and mobile web app support.
+const PWA_META_TAGS: &str = r##"
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Sklonger">
+    <link rel="apple-touch-icon" href="/icon.svg">
+"##;
+
+/// Service worker registration script for PWA installability.
+const SERVICE_WORKER_REGISTRATION: &str = r#"
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(function() {});
+}
+"#;
+
 /// Template options for customizing the HTML output
 #[derive(Default)]
 pub struct TemplateOptions<'a> {
@@ -825,22 +842,24 @@ pub fn base_template_with_options(title: &str, content: &str, options: TemplateO
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{title}</title>
-    {favicon}
+    {favicon}{pwa_meta}
     <script>{theme_init}</script>
     <style>{css}</style>
 </head>
 <body>
 {content}
-<script>{theme_toggle}</script>
+<script>{theme_toggle}{sw_register}</script>
 </body>
 </html>"#,
         lang = html_escape::encode_quoted_attribute(lang),
         title = html_escape::encode_text(title),
         favicon = favicon_tag,
+        pwa_meta = PWA_META_TAGS,
         theme_init = THEME_SCRIPT,
         css = CSS_STYLES,
         content = content,
-        theme_toggle = THEME_TOGGLE_SCRIPT
+        theme_toggle = THEME_TOGGLE_SCRIPT,
+        sw_register = SERVICE_WORKER_REGISTRATION
     )
 }
 
@@ -949,7 +968,7 @@ pub fn streaming_head(options: StreamingHeadOptions) -> String {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{title}</title>
-    {favicon}
+    {favicon}{pwa_meta}
     <script>{theme_init}</script>
     <style>{css}</style>
 </head>
@@ -984,6 +1003,7 @@ pub fn streaming_head(options: StreamingHeadOptions) -> String {
         lang = html_escape::encode_quoted_attribute(lang),
         title = html_escape::encode_text(&title),
         favicon = favicon_tag,
+        pwa_meta = PWA_META_TAGS,
         theme_init = THEME_SCRIPT,
         css = CSS_STYLES,
         profile_url = html_escape::encode_quoted_attribute(options.profile_url),
@@ -1003,12 +1023,13 @@ pub fn streaming_footer(original_post_url: &str) -> String {
 </footer>
 <script>
 document.getElementById('loading-indicator')?.remove();
-{theme_toggle}
+{theme_toggle}{sw_register}
 </script>
 </body>
 </html>"#,
         url = html_escape::encode_quoted_attribute(original_post_url),
-        theme_toggle = THEME_TOGGLE_SCRIPT
+        theme_toggle = THEME_TOGGLE_SCRIPT,
+        sw_register = SERVICE_WORKER_REGISTRATION
     )
 }
 
