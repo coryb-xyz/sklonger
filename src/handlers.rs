@@ -189,7 +189,10 @@ pub async fn health_ready(State(state): State<AppState>) -> impl IntoResponse {
 /// Serve the PWA manifest for Android Web Share Target support.
 pub async fn manifest() -> impl IntoResponse {
     (
-        [(axum::http::header::CONTENT_TYPE, "application/manifest+json")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "application/manifest+json",
+        )],
         crate::pwa::MANIFEST_JSON,
     )
 }
