@@ -60,15 +60,6 @@ pub async fn get_thread(
     fetch_and_render_thread(&state, &parsed.handle, &parsed.post_id).await
 }
 
-pub async fn get_thread_by_path(
-    State(state): State<AppState>,
-    Path(params): Path<ThreadPath>,
-) -> Result<Html<String>, AppError> {
-    info!(handle = %params.handle, post_id = %params.post_id, "fetching thread by path");
-
-    fetch_and_render_thread(&state, &params.handle, &params.post_id).await
-}
-
 async fn fetch_and_render_thread(
     state: &AppState,
     handle: &str,
