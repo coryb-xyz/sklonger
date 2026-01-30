@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
 };
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use tracing::{info, warn};
 
@@ -13,7 +14,8 @@ use crate::bluesky::types::StreamEvent;
 use crate::error::AppError;
 use crate::html::{
     landing_page, render_post, render_thread, streaming_error, streaming_footer, streaming_head,
-    streaming_loading_indicator, streaming_post_before_indicator, StreamingHeadOptions,
+    streaming_loading_indicator, streaming_post_before_indicator, PollingConfig,
+    StreamingHeadOptions,
 };
 use crate::AppState;
 
@@ -26,6 +28,13 @@ pub struct ThreadQuery {
 pub struct ThreadPath {
     pub handle: String,
     pub post_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct ThreadUpdatesQuery {
+    pub handle: String,
+    pub post_id: String,
+    pub since_cid: String,
 }
 
 fn map_client_error(e: ClientError) -> AppError {
@@ -81,6 +90,61 @@ async fn fetch_and_render_thread(
     Ok(Html(html))
 }
 
+/// Handler for polling thread updates.
+/// Returns new posts (if any) since the given CID as HTML fragments.
+pub async fn get_thread_updates(
+    State(state): State<AppState>,
+    Query(params): Query<ThreadUpdatesQuery>,
+) -> Result<Response, AppError> {
+    let thread = state
+        .client
+        .get_thread_by_handle(&params.handle, &params.post_id)
+        .await
+        .map_err(map_client_error)?;
+
+    // Find posts after the since_cid
+    let since_idx = thread.posts.iter().position(|p| p.cid == params.since_cid);
+
+    let new_posts: Vec<_> = match since_idx {
+        Some(idx) => thread.posts.into_iter().skip(idx + 1).collect(),
+        None => {
+            // CID not found - return all posts (thread might have been restructured)
+            thread.posts
+        }
+    };
+
+    if new_posts.is_empty() {
+        return Ok(Response::builder()
+            .status(StatusCode::NO_CONTENT)
+            .body(Body::empty())
+            .unwrap());
+    }
+
+    // Safe to unwrap: we already checked that new_posts is not empty
+    let last_cid = &new_posts.last().unwrap().cid;
+    let post_count = new_posts.len();
+
+    // Render posts as HTML fragments
+    let html: String = new_posts
+        .iter()
+        .map(|post| render_post(post, &thread.author.handle))
+        .collect();
+
+    info!(
+        handle = %params.handle,
+        post_count = post_count,
+        "returning thread updates"
+    );
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "text/html; charset=utf-8")
+        .header("X-Last-CID", last_cid.as_str())
+        .header("X-Post-Count", post_count.to_string())
+        .body(Body::from(html))
+        .unwrap())
+}
+
 /// Streaming handler that sends HTML progressively as posts are fetched.
 /// This provides better perceived responsiveness for long threads.
 pub async fn get_thread_streaming(
@@ -95,13 +159,16 @@ pub async fn get_thread_streaming(
     let (tx, rx) = mpsc::channel::<Result<String, std::convert::Infallible>>(16);
 
     let client = state.client.clone();
+    let config = state.config.clone();
     let handle = params.handle.clone();
     let post_id = params.post_id.clone();
 
     tokio::spawn(async move {
         let mut author_handle = handle.clone();
-        let mut first_post_uri: Option<String> = None;
+        let mut first_post_id: Option<String> = None;
         let mut post_count = 0;
+        let mut last_cid = String::new();
+        let mut last_post_timestamp: Option<DateTime<Utc>> = None;
 
         let stream = client.get_thread_streaming(handle, post_id);
         futures::pin_mut!(stream);
@@ -116,12 +183,16 @@ pub async fn get_thread_streaming(
                         avatar_url: author.avatar_url.as_deref(),
                         profile_url: &author.profile_url(),
                         lang: None,
+                        first_post_text: None, // Not available in streaming mode
                     })
                 }
                 Ok(StreamEvent::Post(post)) => {
-                    if first_post_uri.is_none() {
-                        first_post_uri = Some(post.uri.clone());
+                    if first_post_id.is_none() {
+                        first_post_id = post.uri.rsplit('/').next().map(String::from);
                     }
+                    last_cid = post.cid.clone();
+                    last_post_timestamp = Some(post.created_at);
+
                     let post_html = render_post(&post, &author_handle);
                     post_count += 1;
 
@@ -132,15 +203,34 @@ pub async fn get_thread_streaming(
                     }
                 }
                 Ok(StreamEvent::Done) => {
-                    let post_id_str = first_post_uri
-                        .as_deref()
-                        .and_then(|uri| uri.rsplit('/').next())
-                        .unwrap_or("");
+                    let post_id_str = first_post_id.as_deref().unwrap_or("");
                     let original_url = format!(
                         "https://bsky.app/profile/{}/post/{}",
                         author_handle, post_id_str
                     );
-                    streaming_footer(&original_url)
+
+                    // Enable polling only if configured and thread is recent
+                    let is_thread_recent = last_post_timestamp
+                        .map(|ts| {
+                            let age = Utc::now().signed_duration_since(ts).num_seconds();
+                            age < config.poll_disable_after as i64
+                        })
+                        .unwrap_or(false);
+
+                    let polling_config = if config.poll_enabled && is_thread_recent {
+                        Some(PollingConfig {
+                            handle: author_handle.clone(),
+                            post_id: post_id_str.to_string(),
+                            last_cid: last_cid.clone(),
+                            initial_interval: config.poll_initial_interval,
+                            max_interval: config.poll_max_interval,
+                            disable_after: config.poll_disable_after,
+                        })
+                    } else {
+                        None
+                    };
+
+                    streaming_footer(&original_url, polling_config.as_ref())
                 }
                 Err(e) => {
                     warn!(error = %e, "streaming error");
