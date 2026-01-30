@@ -895,9 +895,11 @@ footer a:hover {
     padding: 0;
 }
 
-.refresh-btn:hover {
-    background-color: var(--border-color);
-    color: var(--text-primary);
+@media (hover: hover) {
+    .refresh-btn:hover {
+        background-color: var(--border-color);
+        color: var(--text-primary);
+    }
 }
 
 .refresh-btn:disabled {
