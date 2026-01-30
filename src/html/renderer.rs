@@ -1,5 +1,7 @@
 use crate::bluesky::types::{Author, Embed, EmbedImage, Thread, ThreadPost};
-use crate::html::templates::{base_template_with_options, TemplateOptions};
+use crate::html::templates::{
+    base_template_with_options, render_avatar_html, TemplateOptions, HEADER_TEMPLATE,
+};
 
 pub fn render_thread(thread: &Thread) -> String {
     let mut content = String::new();
@@ -15,7 +17,7 @@ pub fn render_thread(thread: &Thread) -> String {
     content.push_str(&render_footer(thread));
 
     let title = format!(
-        "Thread by @{} - skeet-longer",
+        "Thread by @{} - sklonger",
         html_escape::encode_text(&thread.author.handle)
     );
 
@@ -28,64 +30,23 @@ pub fn render_thread(thread: &Thread) -> String {
 
 fn render_header(author: &Author) -> String {
     let author_name = author.display_name.as_deref().unwrap_or(&author.handle);
-
-    let avatar = match &author.avatar_url {
-        Some(url) => format!(
-            r#"<img class="avatar" src="{}" alt="{}'s avatar">"#,
-            html_escape::encode_quoted_attribute(url),
-            html_escape::encode_quoted_attribute(author_name)
-        ),
-        None => {
-            let initial = author_name
-                .chars()
-                .next()
-                .unwrap_or('?')
-                .to_uppercase()
-                .to_string();
-            format!(
-                r#"<div class="avatar-placeholder" role="img" aria-label="{}'s avatar">{}</div>"#,
-                html_escape::encode_quoted_attribute(author_name),
-                initial
-            )
-        }
-    };
-
-    let display_name = html_escape::encode_text(author_name).to_string();
-
+    let avatar = render_avatar_html(author.avatar_url.as_deref(), author_name);
     let profile_url = author.profile_url();
 
-    format!(
-        r#"<header>
-    <a href="/" class="home-link" aria-label="Home">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M11.47 3.84a.75.75 0 011.06 0l8.69 8.69a.75.75 0 101.06-1.06l-8.689-8.69a2.25 2.25 0 00-3.182 0l-8.69 8.69a.75.75 0 001.061 1.06l8.69-8.69z" />
-            <path d="M12 5.432l8.159 8.159c.03.03.06.058.091.086v6.198c0 1.035-.84 1.875-1.875 1.875H15a.75.75 0 01-.75-.75v-4.5a.75.75 0 00-.75-.75h-3a.75.75 0 00-.75.75V21a.75.75 0 01-.75.75H5.625a1.875 1.875 0 01-1.875-1.875v-6.198a2.29 2.29 0 00.091-.086L12 5.43z" />
-        </svg>
-    </a>
-    <a href="{profile_url}" class="author" target="_blank" rel="noopener">
-        {avatar}
-        <div class="author-info">
-            <span class="display-name">{display_name}</span>
-            <span class="handle">@{handle}</span>
-        </div>
-    </a>
-    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode" role="switch" aria-checked="false">
-        <span class="theme-toggle-knob" aria-hidden="true">
-            <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z" />
-            </svg>
-            <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path fill-rule="evenodd" d="M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6a9 9 0 009 9 8.97 8.97 0 003.463-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.701-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z" clip-rule="evenodd" />
-            </svg>
-        </span>
-    </button>
-</header>
-"#,
-        profile_url = html_escape::encode_quoted_attribute(&profile_url),
-        avatar = avatar,
-        display_name = display_name,
-        handle = html_escape::encode_text(&author.handle)
-    )
+    HEADER_TEMPLATE
+        .replace(
+            "{profile_url}",
+            html_escape::encode_quoted_attribute(&profile_url).as_ref(),
+        )
+        .replace("{avatar}", &avatar)
+        .replace(
+            "{display_name}",
+            html_escape::encode_text(author_name).as_ref(),
+        )
+        .replace(
+            "{handle}",
+            html_escape::encode_text(&author.handle).as_ref(),
+        )
 }
 
 /// Render a single post as an HTML article element.
@@ -143,10 +104,12 @@ fn render_images(images: &[EmbedImage]) -> String {
         return String::new();
     }
 
-    let layout = match images.len() {
-        1 => "single",
-        2 => "double",
-        _ => "grid",
+    let layout = if images.len() == 1 {
+        "single"
+    } else if images.len() == 2 {
+        "double"
+    } else {
+        "grid"
     };
     let grid_class = format!("embed-images {}", layout);
 
@@ -179,7 +142,7 @@ fn render_video(video: &crate::bluesky::types::EmbedVideo) -> String {
         .aspect_ratio
         .as_ref()
         .map(|ar| format!("aspect-ratio: {} / {};", ar.width, ar.height))
-        .unwrap_or_else(|| "aspect-ratio: 16 / 9;".to_string());
+        .unwrap_or_else(|| String::from("aspect-ratio: 16 / 9;"));
 
     let alt_text = video.alt.as_deref().unwrap_or("Video");
 

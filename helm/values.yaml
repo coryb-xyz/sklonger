@@ -20,6 +20,11 @@ config:
   logLevel: info
   blueskyApiUrl: "https://public.api.bsky.app"
   requestTimeoutSeconds: 10
+  # Polling configuration for thread updates
+  pollEnabled: true
+  pollInitialIntervalSeconds: 30
+  pollMaxIntervalSeconds: 120
+  pollDisableAfterSeconds: 600
 
 serviceAccount:
   create: false

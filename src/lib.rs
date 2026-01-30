@@ -16,6 +16,7 @@ use crate::config::Config;
 #[derive(Clone)]
 pub struct AppState {
     pub client: BlueskyClient,
+    pub config: Config,
 }
 
 pub fn create_app(config: &Config) -> anyhow::Result<Router> {
@@ -24,7 +25,10 @@ pub fn create_app(config: &Config) -> anyhow::Result<Router> {
         Duration::from_secs(config.request_timeout_seconds),
     )?;
 
-    let state = AppState { client };
+    let state = AppState {
+        client,
+        config: config.clone(),
+    };
 
     Ok(Router::new()
         .route("/", get(handlers::get_thread))
@@ -42,5 +46,7 @@ pub fn create_app(config: &Config) -> anyhow::Result<Router> {
         .route("/icon.svg", get(handlers::icon))
         // Web Share Target endpoint
         .route("/share", get(handlers::share_target))
+        // Polling API for thread updates
+        .route("/api/thread/updates", get(handlers::get_thread_updates))
         .with_state(state))
 }

@@ -8,6 +8,10 @@ pub struct Config {
     pub log_level: String,
     pub bluesky_api_url: String,
     pub request_timeout_seconds: u64,
+    pub poll_enabled: bool,
+    pub poll_initial_interval: u64,
+    pub poll_max_interval: u64,
+    pub poll_disable_after: u64,
 }
 
 #[derive(Error, Debug)]
@@ -29,6 +33,17 @@ fn parse_env_or_default<T: FromStr>(name: &'static str, default: T) -> Result<T,
     }
 }
 
+fn parse_bool_env_or_default(name: &'static str, default: bool) -> Result<bool, ConfigError> {
+    match env::var(name) {
+        Ok(val) => match val.to_lowercase().as_str() {
+            "true" | "1" | "yes" => Ok(true),
+            "false" | "0" | "no" => Ok(false),
+            _ => Err(ConfigError::InvalidEnvVar(name, val)),
+        },
+        Err(_) => Ok(default),
+    }
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
         Ok(Self {
@@ -36,6 +51,10 @@ impl Config {
             log_level: env_var_or_default("LOG_LEVEL", "info"),
             bluesky_api_url: env_var_or_default("BLUESKY_API_URL", "https://public.api.bsky.app"),
             request_timeout_seconds: parse_env_or_default("REQUEST_TIMEOUT_SECONDS", 10)?,
+            poll_enabled: parse_bool_env_or_default("POLL_ENABLED", true)?,
+            poll_initial_interval: parse_env_or_default("POLL_INITIAL_INTERVAL_SECONDS", 30)?,
+            poll_max_interval: parse_env_or_default("POLL_MAX_INTERVAL_SECONDS", 120)?,
+            poll_disable_after: parse_env_or_default("POLL_DISABLE_AFTER_SECONDS", 600)?,
         })
     }
 }
