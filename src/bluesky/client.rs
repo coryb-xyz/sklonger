@@ -316,9 +316,9 @@ impl BlueskyClient {
                     thumb_url: external_view.external.thumb.clone(),
                 }))
             }
-            Union::Refs(PostViewEmbedRefs::AppBskyEmbedRecordView(record_view)) => {
-                self.extract_record(record_view).map(|record| Embed::Record(Box::new(record)))
-            }
+            Union::Refs(PostViewEmbedRefs::AppBskyEmbedRecordView(record_view)) => self
+                .extract_record(record_view)
+                .map(|record| Embed::Record(Box::new(record))),
             Union::Refs(PostViewEmbedRefs::AppBskyEmbedRecordWithMediaView(record_with_media)) => {
                 self.extract_record_with_media(record_with_media)
             }
