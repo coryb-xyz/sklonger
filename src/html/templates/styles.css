@@ -346,6 +346,94 @@ a.author:hover .display-name {
     -webkit-box-orient: vertical;
 }
 
+/* Quote post (record embed) styles */
+.embed-record {
+    display: block;
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    text-decoration: none;
+    color: inherit;
+    transition: background-color 0.15s ease;
+}
+
+.embed-record:hover {
+    background-color: var(--bg-secondary);
+}
+
+.record-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.record-header .avatar,
+.record-header .avatar-placeholder {
+    width: 20px;
+    height: 20px;
+    font-size: 10px;
+}
+
+.record-author-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.record-author-name {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.record-author-handle {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.record-text {
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin-bottom: 8px;
+}
+
+.record-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* Nested embeds within quote posts should be smaller */
+.embed-record .embed-images {
+    margin-top: 8px;
+    border-radius: 8px;
+}
+
+.embed-record .embed-image {
+    max-height: 200px;
+}
+
+.embed-record .embed-video {
+    margin-top: 8px;
+    border-radius: 8px;
+    max-height: 200px;
+}
+
+.embed-record .embed-external {
+    margin-top: 8px;
+    border-radius: 8px;
+}
+
 footer {
     margin-top: 24px;
     padding-top: 16px;
@@ -853,6 +941,168 @@ footer a:hover {
     }
 }
 
+/* Gallery overlay styles */
+.gallery-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.95);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.gallery-overlay.active {
+    display: flex;
+}
+
+.gallery-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.gallery-media {
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.gallery-image {
+    max-width: 100%;
+    max-height: 90vh;
+    object-fit: contain;
+}
+
+.gallery-video {
+    max-width: 100%;
+    max-height: 90vh;
+}
+
+.gallery-close {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 48px;
+    height: 48px;
+    border: none;
+    border-radius: 50%;
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease, opacity 0.2s ease;
+    z-index: 1001;
+}
+
+.gallery-close:hover {
+    background-color: var(--border-color);
+}
+
+.gallery-close svg {
+    width: 20px;
+    height: 20px;
+}
+
+.gallery-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 48px;
+    height: 48px;
+    border: none;
+    border-radius: 50%;
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease, opacity 0.2s ease;
+    z-index: 1001;
+}
+
+.gallery-nav:hover {
+    background-color: var(--border-color);
+}
+
+.gallery-nav svg {
+    width: 20px;
+    height: 20px;
+}
+
+.gallery-prev {
+    left: 20px;
+}
+
+.gallery-next {
+    right: 20px;
+}
+
+.gallery-counter {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    border-radius: 20px;
+    font-size: 14px;
+    z-index: 1001;
+}
+
+@media (max-width: 600px) {
+    .gallery-close,
+    .gallery-nav {
+        width: 44px;
+        height: 44px;
+    }
+
+    .gallery-close svg,
+    .gallery-nav svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    /* Move navigation buttons to bottom on mobile */
+    .gallery-nav {
+        top: auto;
+        bottom: 20px;
+        transform: none;
+    }
+
+    .gallery-prev {
+        left: 12px;
+    }
+
+    .gallery-next {
+        right: 12px;
+    }
+
+    .gallery-close {
+        top: 12px;
+        right: 12px;
+    }
+
+    /* Move counter up to make room for bottom buttons */
+    .gallery-counter {
+        bottom: 80px;
+        font-size: 13px;
+        padding: 8px 14px;
+    }
+}
+
 @media print {
     body {
         max-width: none;
@@ -875,6 +1125,10 @@ footer a:hover {
 
     .theme-toggle {
         display: none;
+    }
+
+    .gallery-overlay {
+        display: none !important;
     }
 }
 

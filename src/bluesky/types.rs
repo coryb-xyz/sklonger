@@ -25,6 +25,11 @@ pub enum Embed {
     Images(Vec<EmbedImage>),
     Video(EmbedVideo),
     External(EmbedExternal),
+    Record(Box<EmbedRecord>),
+    RecordWithMedia {
+        record: Box<EmbedRecord>,
+        media: Box<Embed>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +54,17 @@ pub struct EmbedExternal {
     pub title: String,
     pub description: String,
     pub thumb_url: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EmbedRecord {
+    pub uri: String,
+    pub cid: String,
+    pub author: Author,
+    pub text: String,
+    pub created_at: DateTime<Utc>,
+    /// Optional embedded content within the quoted post (e.g., images)
+    pub embed: Option<Box<Embed>>,
 }
 
 #[derive(Debug, Clone)]

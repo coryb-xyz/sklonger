@@ -7,6 +7,7 @@ const THEME_TOGGLE_SCRIPT: &str = include_str!("templates/theme-toggle.js");
 const PWA_META_TAGS: &str = include_str!("templates/pwa-meta.html");
 const SERVICE_WORKER_REGISTRATION: &str = include_str!("templates/sw-register.js");
 const PWA_INSTALL_SCRIPT: &str = include_str!("templates/pwa-install.js");
+const GALLERY_SCRIPT: &str = include_str!("templates/gallery.js");
 
 /// Template options for customizing the HTML output
 #[derive(Default)]
@@ -179,6 +180,10 @@ fn render_poll_script(config: &PollingConfig) -> String {
         while (temp.firstChild) {{
             thread.appendChild(temp.firstChild);
         }}
+        // Reinitialize gallery handlers for new posts
+        if (window.setupGalleryHandlers) {{
+            window.setupGalleryHandlers();
+        }}
     }}
 
     // Visibility-aware polling: pause when hidden, catch up when visible
@@ -234,7 +239,7 @@ pub fn base_template_with_options(title: &str, content: &str, options: TemplateO
 </head>
 <body>
 {content}
-<script>{theme_toggle}{sw_register}</script>
+<script>{theme_toggle}{sw_register}{gallery}</script>
 </body>
 </html>"#,
         lang = html_escape::encode_quoted_attribute(lang),
@@ -245,7 +250,8 @@ pub fn base_template_with_options(title: &str, content: &str, options: TemplateO
         css = CSS_STYLES,
         content = content,
         theme_toggle = THEME_TOGGLE_SCRIPT,
-        sw_register = SERVICE_WORKER_REGISTRATION
+        sw_register = SERVICE_WORKER_REGISTRATION,
+        gallery = GALLERY_SCRIPT
     )
 }
 
@@ -474,13 +480,14 @@ pub fn streaming_footer(original_post_url: &str, polling: Option<&PollingConfig>
 </footer>
 <script>
 document.getElementById('loading-indicator')?.remove();
-{theme_toggle}{sw_register}{poll_script}
+{theme_toggle}{sw_register}{gallery}{poll_script}
 </script>
 </body>
 </html>"#,
         url = html_escape::encode_quoted_attribute(original_post_url),
         theme_toggle = THEME_TOGGLE_SCRIPT,
         sw_register = SERVICE_WORKER_REGISTRATION,
+        gallery = GALLERY_SCRIPT,
         poll_script = poll_script
     )
 }

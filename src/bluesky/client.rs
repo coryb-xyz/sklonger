@@ -12,8 +12,8 @@ use chrono::{DateTime, Utc};
 use thiserror::Error;
 
 use super::types::{
-    AspectRatio, Author, Embed, EmbedExternal, EmbedImage, EmbedVideo, StreamEvent, Thread,
-    ThreadPost,
+    AspectRatio, Author, Embed, EmbedExternal, EmbedImage, EmbedRecord, EmbedVideo, StreamEvent,
+    Thread, ThreadPost,
 };
 
 #[derive(Error, Debug)]
@@ -316,27 +316,94 @@ impl BlueskyClient {
                     thumb_url: external_view.external.thumb.clone(),
                 }))
             }
-            Union::Refs(PostViewEmbedRefs::AppBskyEmbedRecordWithMediaView(record_with_media)) => {
-                self.extract_media_from_record_with_media(record_with_media)
+            Union::Refs(PostViewEmbedRefs::AppBskyEmbedRecordView(record_view)) => {
+                self.extract_record(record_view).map(|record| Embed::Record(Box::new(record)))
             }
-            // Quoted records without media and any other types - skip for now
+            Union::Refs(PostViewEmbedRefs::AppBskyEmbedRecordWithMediaView(record_with_media)) => {
+                self.extract_record_with_media(record_with_media)
+            }
             _ => None,
         }
     }
 
-    fn extract_media_from_record_with_media(
+    fn extract_record_with_media(
         &self,
         record_with_media: &atrium_api::app::bsky::embed::record_with_media::View,
     ) -> Option<Embed> {
         use atrium_api::app::bsky::embed::record_with_media::ViewMediaRefs;
 
-        match &record_with_media.media {
+        let record = self.extract_record(&record_with_media.record)?;
+
+        let media = match &record_with_media.media {
             Union::Refs(ViewMediaRefs::AppBskyEmbedImagesView(images_view)) => {
-                Some(Embed::Images(extract_images_from_view(&images_view.images)))
+                Embed::Images(extract_images_from_view(&images_view.images))
             }
             Union::Refs(ViewMediaRefs::AppBskyEmbedVideoView(video_view)) => {
-                Some(Embed::Video(extract_video_from_view(video_view)))
+                Embed::Video(extract_video_from_view(video_view))
             }
+            Union::Refs(ViewMediaRefs::AppBskyEmbedExternalView(external_view)) => {
+                Embed::External(EmbedExternal {
+                    uri: external_view.external.uri.clone(),
+                    title: external_view.external.title.clone(),
+                    description: external_view.external.description.clone(),
+                    thumb_url: external_view.external.thumb.clone(),
+                })
+            }
+            _ => return None,
+        };
+
+        Some(Embed::RecordWithMedia {
+            record: Box::new(record),
+            media: Box::new(media),
+        })
+    }
+
+    fn extract_record(
+        &self,
+        record_view: &atrium_api::app::bsky::embed::record::View,
+    ) -> Option<EmbedRecord> {
+        use atrium_api::app::bsky::embed::record::ViewRecordRefs;
+
+        match &record_view.record {
+            Union::Refs(ViewRecordRefs::ViewRecord(view_record)) => {
+                let author = Author {
+                    did: view_record.author.did.to_string(),
+                    handle: view_record.author.handle.to_string(),
+                    display_name: view_record.author.display_name.clone(),
+                    avatar_url: view_record.author.avatar.clone(),
+                };
+
+                // Extract text and created_at from the record value
+                let value = serde_json::to_value(&view_record.value).ok()?;
+                let text = value
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let created_at = value
+                    .get("createdAt")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(Utc::now);
+
+                // Recursively extract any embeds within the quoted post
+                // Note: embeds in ViewRecord use ViewRecordEmbedsItem, which is a subset
+                // For simplicity, we'll skip nested embeds in quoted posts for now
+                // Most quoted posts don't have embeds, and this avoids type complexity
+                let embed = None;
+
+                Some(EmbedRecord {
+                    uri: view_record.uri.clone(),
+                    cid: view_record.cid.as_ref().to_string(),
+                    author,
+                    text,
+                    created_at,
+                    embed,
+                })
+            }
+            // Handle other record types (not found, blocked, etc.) by returning None
             _ => None,
         }
     }
