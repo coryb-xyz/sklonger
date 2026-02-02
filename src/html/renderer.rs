@@ -1,4 +1,4 @@
-use crate::bluesky::types::{Author, Embed, EmbedImage, Thread, ThreadPost};
+use crate::bluesky::types::{Author, Embed, EmbedImage, EmbedRecord, Thread, ThreadPost};
 use crate::html::templates::{
     base_template_with_options, render_avatar_html, TemplateOptions, HEADER_TEMPLATE,
 };
@@ -96,6 +96,10 @@ fn render_embed(embed: &Embed) -> String {
         Embed::Images(images) => render_images(images),
         Embed::Video(video) => render_video(video),
         Embed::External(external) => render_external(external),
+        Embed::Record(record) => render_record(record),
+        Embed::RecordWithMedia { record, media } => {
+            format!("{}{}", render_record(record), render_embed(media))
+        }
     }
 }
 
@@ -104,12 +108,10 @@ fn render_images(images: &[EmbedImage]) -> String {
         return String::new();
     }
 
-    let layout = if images.len() == 1 {
-        "single"
-    } else if images.len() == 2 {
-        "double"
-    } else {
-        "grid"
+    let layout = match images.len() {
+        1 => "single",
+        2 => "double",
+        _ => "grid",
     };
     let grid_class = format!("embed-images {}", layout);
 
@@ -184,6 +186,60 @@ fn render_external(external: &crate::bluesky::types::EmbedExternal) -> String {
         thumb = thumb_html,
         title = html_escape::encode_text(&external.title),
         description = html_escape::encode_text(&external.description)
+    )
+}
+
+fn render_record(record: &EmbedRecord) -> String {
+    let author_name = record
+        .author
+        .display_name
+        .as_deref()
+        .unwrap_or(&record.author.handle);
+    let avatar_html = render_avatar_html(record.author.avatar_url.as_deref(), author_name);
+
+    // Extract post ID from URI for link
+    let post_id = record.uri.rsplit('/').next().unwrap_or("");
+    let post_url = format!(
+        "https://bsky.app/profile/{}/post/{}",
+        record.author.handle, post_id
+    );
+
+    let timestamp = record.created_at.format("%b %d, %Y").to_string();
+
+    // Truncate text for preview (max 300 chars)
+    let text_preview = if record.text.len() > 300 {
+        format!("{}...", &record.text[..297])
+    } else {
+        record.text.clone()
+    };
+
+    // Render any nested embeds (e.g., images in quoted post)
+    let nested_embed_html = record
+        .embed
+        .as_ref()
+        .map(|e| render_embed(e))
+        .unwrap_or_default();
+
+    format!(
+        r#"<a href="{post_url}" target="_blank" rel="noopener" class="embed-record">
+    <div class="record-header">
+        {avatar}
+        <div class="record-author-info">
+            <span class="record-author-name">{author_name}</span>
+            <span class="record-author-handle">@{handle}</span>
+        </div>
+    </div>
+    <div class="record-text">{text}</div>
+    {nested_embed}
+    <div class="record-meta">{timestamp}</div>
+</a>"#,
+        post_url = html_escape::encode_quoted_attribute(&post_url),
+        avatar = avatar_html,
+        author_name = html_escape::encode_text(author_name),
+        handle = html_escape::encode_text(&record.author.handle),
+        text = html_escape::encode_text(&text_preview),
+        nested_embed = nested_embed_html,
+        timestamp = timestamp
     )
 }
 
