@@ -1,4 +1,4 @@
-# skeet-longer
+# sklonger
 
 A lightweight web service that fetches Bluesky threads (self-reply chains) and renders them as clean, readable HTML pages.
 
@@ -11,7 +11,7 @@ When someone posts a long thread on Bluesky as a series of self-replies, skeet-l
 ### Via URL parameter
 
 ```
-https://your-instance.com/?url=https://bsky.app/profile/user.bsky.social/post/abc123
+https://sklonger.app/?url=https://bsky.app/profile/user.bsky.social/post/abc123
 ```
 
 ### Via direct path (drop-in replacement for bsky.app)
@@ -25,7 +25,7 @@ https://bsky.app/profile/user.bsky.social/post/abc123
 becomes:
 
 ```
-https://your-instance.com/profile/user.bsky.social/post/abc123
+https://sklonger.app/profile/user.bsky.social/post/abc123
 ```
 
 ## Features
