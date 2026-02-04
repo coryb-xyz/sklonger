@@ -1,6 +1,7 @@
 use crate::bluesky::types::{Author, Embed, EmbedImage, EmbedRecord, Thread, ThreadPost};
 use crate::html::templates::{
-    base_template_with_options, render_avatar_html, SocialMeta, TemplateOptions, HEADER_TEMPLATE,
+    base_template_with_options, render_avatar_html, render_footer_content, SocialMeta,
+    TemplateOptions, HEADER_TEMPLATE,
 };
 
 pub fn render_thread(thread: &Thread, public_url: &str) -> String {
@@ -269,11 +270,8 @@ fn render_footer(thread: &Thread) -> String {
         .unwrap_or_else(|| "https://bsky.app".to_string());
 
     format!(
-        r#"<footer>
-    <a href="{url}" target="_blank" rel="noopener">View original on Bluesky</a>
-</footer>
-"#,
-        url = html_escape::encode_quoted_attribute(&original_url)
+        "<footer>\n    {footer_content}\n</footer>\n",
+        footer_content = render_footer_content(&original_url)
     )
 }
 

@@ -572,17 +572,27 @@ pub fn streaming_head(options: StreamingHeadOptions) -> String {
     )
 }
 
+/// Render the inner content of the footer (the links).
+/// Used by both streaming and non-streaming responses.
+pub fn render_footer_content(original_post_url: &str) -> String {
+    format!(
+        r#"<a href="{url}" target="_blank" rel="noopener">View original on Bluesky</a>
+    <span class="support-link">Like this app? <a href="https://ko-fi.com/corybxyz" target="_blank" rel="noopener">Buy me a 🍵</a></span>"#,
+        url = html_escape::encode_quoted_attribute(original_post_url)
+    )
+}
+
 /// Render the closing HTML for a streaming response.
 /// This includes the footer and closing tags.
 /// If polling config is provided, the polling script is injected.
 pub fn streaming_footer(original_post_url: &str, polling: Option<&PollingConfig>) -> String {
     let poll_script = polling.map(render_poll_script).unwrap_or_default();
+    let footer_content = render_footer_content(original_post_url);
 
     format!(
         r#"</main>
 <footer>
-    <a href="{url}" target="_blank" rel="noopener">View original on Bluesky</a>
-    <span class="support-link">Like this app? <a href="https://ko-fi.com/corybxyz" target="_blank" rel="noopener">Buy me a 🍵</a></span>
+    {footer_content}
 </footer>
 <script>
 document.getElementById('loading-indicator')?.remove();
@@ -590,7 +600,7 @@ document.getElementById('loading-indicator')?.remove();
 </script>
 </body>
 </html>"#,
-        url = html_escape::encode_quoted_attribute(original_post_url),
+        footer_content = footer_content,
         theme_toggle = THEME_TOGGLE_SCRIPT,
         sw_register = SERVICE_WORKER_REGISTRATION,
         gallery = GALLERY_SCRIPT,
