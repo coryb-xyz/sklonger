@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{header::USER_AGENT, HeaderMap, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
 };
 use chrono::{DateTime, Utc};
@@ -35,6 +35,30 @@ pub struct ThreadUpdatesQuery {
     pub handle: String,
     pub post_id: String,
     pub since_cid: String,
+}
+
+/// Common social media crawler User-Agent patterns.
+/// These crawlers fetch pages to generate link previews.
+const SOCIAL_CRAWLER_PATTERNS: &[&str] = &[
+    "Twitterbot",
+    "facebookexternalhit",
+    "LinkedInBot",
+    "WhatsApp",
+    "Slackbot",
+    "TelegramBot",
+    "Discordbot",
+    // Some crawlers for general link previews
+    "Googlebot",
+    "bingbot",
+    "Applebot",
+];
+
+/// Check if a User-Agent string belongs to a social media crawler.
+/// These crawlers are served the non-streaming path for proper Open Graph tags.
+fn is_social_crawler(user_agent: &str) -> bool {
+    SOCIAL_CRAWLER_PATTERNS
+        .iter()
+        .any(|pattern| user_agent.contains(pattern))
 }
 
 fn map_client_error(e: ClientError) -> AppError {
@@ -86,7 +110,7 @@ async fn fetch_and_render_thread(
         "thread fetched successfully"
     );
 
-    let html = render_thread(&thread);
+    let html = render_thread(&thread, &state.config.public_url);
     Ok(Html(html))
 }
 
@@ -147,12 +171,36 @@ pub async fn get_thread_updates(
 
 /// Streaming handler that sends HTML progressively as posts are fetched.
 /// This provides better perceived responsiveness for long threads.
+///
+/// For social media crawlers (detected via User-Agent), this handler returns
+/// the non-streaming response with proper Open Graph meta tags for rich previews.
 pub async fn get_thread_streaming(
     State(state): State<AppState>,
     Path(params): Path<ThreadPath>,
+    headers: HeaderMap,
 ) -> Response {
     use futures::stream::StreamExt as _;
     use tokio::sync::mpsc;
+
+    // Check if this is a social media crawler requesting link preview data.
+    // Crawlers don't benefit from streaming and need the full HTML with OG tags.
+    let user_agent = headers
+        .get(USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if is_social_crawler(user_agent) {
+        info!(
+            handle = %params.handle,
+            post_id = %params.post_id,
+            user_agent = %user_agent,
+            "serving non-streaming response for social crawler"
+        );
+        return match fetch_and_render_thread(&state, &params.handle, &params.post_id).await {
+            Ok(html) => html.into_response(),
+            Err(e) => e.into_response(),
+        };
+    }
 
     info!(handle = %params.handle, post_id = %params.post_id, "fetching thread (streaming)");
 
@@ -170,6 +218,7 @@ pub async fn get_thread_streaming(
         let mut last_cid = String::new();
         let mut last_post_timestamp: Option<DateTime<Utc>> = None;
 
+        let post_id_for_url = post_id.clone();
         let stream = client.get_thread_streaming(handle, post_id);
         futures::pin_mut!(stream);
 
@@ -177,6 +226,10 @@ pub async fn get_thread_streaming(
             let chunk = match event {
                 Ok(StreamEvent::Header(author)) => {
                     author_handle = author.handle.clone();
+                    let thread_url = format!(
+                        "{}/profile/{}/post/{}",
+                        config.public_url, author.handle, post_id_for_url
+                    );
                     streaming_head(StreamingHeadOptions {
                         author_handle: &author.handle,
                         author_display_name: author.display_name.as_deref(),
@@ -184,6 +237,7 @@ pub async fn get_thread_streaming(
                         profile_url: &author.profile_url(),
                         lang: None,
                         first_post_text: None, // Not available in streaming mode
+                        thread_url: &thread_url,
                     })
                 }
                 Ok(StreamEvent::Post(post)) => {
