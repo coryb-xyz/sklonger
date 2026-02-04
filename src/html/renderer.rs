@@ -1,9 +1,9 @@
 use crate::bluesky::types::{Author, Embed, EmbedImage, EmbedRecord, Thread, ThreadPost};
 use crate::html::templates::{
-    base_template_with_options, render_avatar_html, TemplateOptions, HEADER_TEMPLATE,
+    base_template_with_options, render_avatar_html, SocialMeta, TemplateOptions, HEADER_TEMPLATE,
 };
 
-pub fn render_thread(thread: &Thread) -> String {
+pub fn render_thread(thread: &Thread, public_url: &str) -> String {
     let mut content = String::new();
 
     content.push_str(&render_header(&thread.author));
@@ -21,9 +21,29 @@ pub fn render_thread(thread: &Thread) -> String {
         html_escape::encode_text(&thread.author.handle)
     );
 
+    // Build social meta for Open Graph tags
+    let og_title = format!("Thread by @{}", thread.author.handle);
+    let first_post_text = thread.posts.first().map(|p| p.text.as_str());
+    let post_id = thread.posts.first().and_then(|p| p.uri.rsplit('/').next());
+    let thread_url = post_id.map(|id| {
+        format!(
+            "{}/profile/{}/post/{}",
+            public_url, thread.author.handle, id
+        )
+    });
+
+    let social = SocialMeta {
+        title: Some(&og_title),
+        description: first_post_text,
+        url: thread_url.as_deref(),
+        image_url: thread.author.avatar_url.as_deref(),
+        og_type: Some("article"),
+    };
+
     let options = TemplateOptions {
         favicon_url: thread.author.avatar_url.as_deref(),
         lang: thread.primary_language(),
+        social: Some(social),
     };
     base_template_with_options(&title, &content, options)
 }

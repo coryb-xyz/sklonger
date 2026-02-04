@@ -9,11 +9,27 @@ const SERVICE_WORKER_REGISTRATION: &str = include_str!("templates/sw-register.js
 const PWA_INSTALL_SCRIPT: &str = include_str!("templates/pwa-install.js");
 const GALLERY_SCRIPT: &str = include_str!("templates/gallery.js");
 
+/// Social media meta tags for Open Graph and Twitter Cards
+#[derive(Default)]
+pub struct SocialMeta<'a> {
+    /// Page title for og:title and twitter:title
+    pub title: Option<&'a str>,
+    /// Description for og:description and twitter:description (will be truncated to 160 chars)
+    pub description: Option<&'a str>,
+    /// Canonical URL for og:url
+    pub url: Option<&'a str>,
+    /// Image URL for og:image and twitter:image
+    pub image_url: Option<&'a str>,
+    /// Content type (e.g., "article", "website")
+    pub og_type: Option<&'a str>,
+}
+
 /// Template options for customizing the HTML output
 #[derive(Default)]
 pub struct TemplateOptions<'a> {
     pub favicon_url: Option<&'a str>,
     pub lang: Option<&'a str>,
+    pub social: Option<SocialMeta<'a>>,
 }
 
 /// Generate a favicon link tag from an optional URL.
@@ -222,9 +238,117 @@ pub fn base_template(title: &str, content: &str) -> String {
     base_template_with_options(title, content, TemplateOptions::default())
 }
 
+/// Render social meta tags (Open Graph and Twitter Cards) from SocialMeta options
+fn render_social_meta(social: &SocialMeta) -> String {
+    let mut tags = String::new();
+
+    // Pre-compute escaped values to avoid repetition
+    let escaped_title = social
+        .title
+        .map(|t| html_escape::encode_quoted_attribute(t).into_owned());
+    let escaped_description = social.description.map(|d| {
+        let truncated = truncate_for_description(d, 160);
+        html_escape::encode_quoted_attribute(&truncated).into_owned()
+    });
+    let escaped_image = social
+        .image_url
+        .map(|u| html_escape::encode_quoted_attribute(u).into_owned());
+
+    // Standard description meta tag
+    if let Some(ref desc) = escaped_description {
+        tags.push_str(&format!(
+            r#"<meta name="description" content="{}">
+    "#,
+            desc
+        ));
+    }
+
+    // Open Graph tags
+    if let Some(og_type) = social.og_type {
+        tags.push_str(&format!(
+            r#"<meta property="og:type" content="{}">
+    "#,
+            html_escape::encode_quoted_attribute(og_type)
+        ));
+    }
+
+    if let Some(ref title) = escaped_title {
+        tags.push_str(&format!(
+            r#"<meta property="og:title" content="{}">
+    "#,
+            title
+        ));
+    }
+
+    if let Some(ref desc) = escaped_description {
+        tags.push_str(&format!(
+            r#"<meta property="og:description" content="{}">
+    "#,
+            desc
+        ));
+    }
+
+    if let Some(url) = social.url {
+        tags.push_str(&format!(
+            r#"<meta property="og:url" content="{}">
+    "#,
+            html_escape::encode_quoted_attribute(url)
+        ));
+    }
+
+    tags.push_str(
+        r#"<meta property="og:site_name" content="sklonger">
+    "#,
+    );
+
+    if let Some(ref image) = escaped_image {
+        tags.push_str(&format!(
+            r#"<meta property="og:image" content="{}">
+    "#,
+            image
+        ));
+    }
+
+    // Twitter Card tags
+    tags.push_str(
+        r#"<meta name="twitter:card" content="summary">
+    "#,
+    );
+
+    if let Some(ref title) = escaped_title {
+        tags.push_str(&format!(
+            r#"<meta name="twitter:title" content="{}">
+    "#,
+            title
+        ));
+    }
+
+    if let Some(ref desc) = escaped_description {
+        tags.push_str(&format!(
+            r#"<meta name="twitter:description" content="{}">
+    "#,
+            desc
+        ));
+    }
+
+    if let Some(ref image) = escaped_image {
+        tags.push_str(&format!(
+            r#"<meta name="twitter:image" content="{}">"#,
+            image
+        ));
+    }
+
+    tags
+}
+
 pub fn base_template_with_options(title: &str, content: &str, options: TemplateOptions) -> String {
     let favicon_tag = render_favicon_tag(options.favicon_url);
     let lang = options.lang.unwrap_or("en");
+    let social_meta = options
+        .social
+        .as_ref()
+        .map(render_social_meta)
+        .unwrap_or_default();
 
     format!(
         r#"<!DOCTYPE html>
@@ -233,7 +357,7 @@ pub fn base_template_with_options(title: &str, content: &str, options: TemplateO
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{title}</title>
-    {favicon}{pwa_meta}
+    {social_meta}{favicon}{pwa_meta}
     <script>{theme_init}</script>
     <style>{css}</style>
 </head>
@@ -244,6 +368,7 @@ pub fn base_template_with_options(title: &str, content: &str, options: TemplateO
 </html>"#,
         lang = html_escape::encode_quoted_attribute(lang),
         title = html_escape::encode_text(title),
+        social_meta = social_meta,
         favicon = favicon_tag,
         pwa_meta = PWA_META_TAGS,
         theme_init = THEME_SCRIPT,
@@ -362,6 +487,8 @@ pub struct StreamingHeadOptions<'a> {
     pub lang: Option<&'a str>,
     /// First post text for social sharing description (will be truncated)
     pub first_post_text: Option<&'a str>,
+    /// Canonical URL for the thread (for og:url tag)
+    pub thread_url: &'a str,
 }
 
 /// Truncate text to approximately the given length, breaking at word boundaries.
@@ -390,38 +517,18 @@ pub fn streaming_head(options: StreamingHeadOptions) -> String {
 
     // Generate description from first post text for social sharing
     let og_title = format!("Thread by @{}", options.author_handle);
-    let description = options
-        .first_post_text
-        .map(|text| truncate_for_description(text, 160))
-        .unwrap_or_else(|| format!("A thread by {} on Bluesky", author_name));
+    let default_description = format!("A thread by {} on Bluesky", author_name);
+    let description = options.first_post_text.unwrap_or(&default_description);
 
-    // Social sharing meta tags
-    let social_meta = format!(
-        r#"<meta name="description" content="{description}">
-    <meta property="og:type" content="article">
-    <meta property="og:title" content="{og_title}">
-    <meta property="og:description" content="{description}">
-    <meta property="og:site_name" content="sklonger">{og_image}
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="{og_title}">
-    <meta name="twitter:description" content="{description}">{twitter_image}"#,
-        description = html_escape::encode_quoted_attribute(&description),
-        og_title = html_escape::encode_quoted_attribute(&og_title),
-        og_image = options
-            .avatar_url
-            .map(|url| format!(
-                "\n    <meta property=\"og:image\" content=\"{}\">",
-                html_escape::encode_quoted_attribute(url)
-            ))
-            .unwrap_or_default(),
-        twitter_image = options
-            .avatar_url
-            .map(|url| format!(
-                "\n    <meta name=\"twitter:image\" content=\"{}\">",
-                html_escape::encode_quoted_attribute(url)
-            ))
-            .unwrap_or_default(),
-    );
+    // Reuse render_social_meta for consistency
+    let social = SocialMeta {
+        title: Some(&og_title),
+        description: Some(description),
+        url: Some(options.thread_url),
+        image_url: options.avatar_url,
+        og_type: Some("article"),
+    };
+    let social_meta = render_social_meta(&social);
 
     // Render header from template with interpolated values
     let header = HEADER_TEMPLATE
@@ -446,8 +553,7 @@ pub fn streaming_head(options: StreamingHeadOptions) -> String {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{title}</title>
-    {social_meta}
-    {favicon}{pwa_meta}
+    {social_meta}{favicon}{pwa_meta}
     <script>{theme_init}</script>
     <style>{css}</style>
 </head>

@@ -12,6 +12,8 @@ pub struct Config {
     pub poll_initial_interval: u64,
     pub poll_max_interval: u64,
     pub poll_disable_after: u64,
+    /// Public URL where the app is hosted (for Open Graph meta tags)
+    pub public_url: String,
 }
 
 #[derive(Error, Debug)]
@@ -55,6 +57,7 @@ impl Config {
             poll_initial_interval: parse_env_or_default("POLL_INITIAL_INTERVAL_SECONDS", 30)?,
             poll_max_interval: parse_env_or_default("POLL_MAX_INTERVAL_SECONDS", 120)?,
             poll_disable_after: parse_env_or_default("POLL_DISABLE_AFTER_SECONDS", 600)?,
+            public_url: env_var_or_default("PUBLIC_URL", "https://sklonger.app"),
         })
     }
 }
