@@ -80,7 +80,7 @@ body {
     line-height: 1.6;
     color: var(--text-primary);
     background-color: var(--bg-primary);
-    max-width: 70ch;
+    max-width: 85ch;
     margin: 0 auto;
     padding: 20px;
     padding-top: 80px;
@@ -92,7 +92,7 @@ header {
     top: 0;
     left: 0;
     right: 0;
-    max-width: 70ch;
+    max-width: 85ch;
     margin: 0 auto;
     padding: 16px 20px;
     background-color: var(--bg-primary);
@@ -914,7 +914,7 @@ footer a:hover {
     bottom: 0;
     left: 0;
     right: 0;
-    max-width: 70ch;
+    max-width: 85ch;
     margin: 0 auto;
     height: 50vh;
     background-color: var(--bg-primary);
