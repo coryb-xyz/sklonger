@@ -4,10 +4,15 @@ pub const HEADER_TEMPLATE: &str = include_str!("templates/header.html");
 
 const THEME_SCRIPT: &str = include_str!("templates/theme-init.js");
 const THEME_TOGGLE_SCRIPT: &str = include_str!("templates/theme-toggle.js");
+const FONT_SIZE_INIT_SCRIPT: &str = include_str!("templates/font-size-init.js");
+const FONT_SIZE_CONTROL_SCRIPT: &str = include_str!("templates/font-size-control.js");
 const PWA_META_TAGS: &str = include_str!("templates/pwa-meta.html");
 const SERVICE_WORKER_REGISTRATION: &str = include_str!("templates/sw-register.js");
 const PWA_INSTALL_SCRIPT: &str = include_str!("templates/pwa-install.js");
 const GALLERY_SCRIPT: &str = include_str!("templates/gallery.js");
+const OPTIONS_MENU_TEMPLATE: &str = include_str!("templates/options-menu.html");
+const OPTIONS_MENU_SCRIPT: &str = include_str!("templates/options-menu.js");
+const LOCAL_TIME_SCRIPT: &str = include_str!("templates/local-time.js");
 
 /// Social media meta tags for Open Graph and Twitter Cards
 #[derive(Default)]
@@ -76,6 +81,11 @@ pub struct PollingConfig {
     pub initial_interval: u64,
     pub max_interval: u64,
     pub disable_after: u64,
+    /// Whether the thread is stale (last post older than disable_after).
+    /// Polling starts stopped but can be enabled by the user.
+    pub stale: bool,
+    /// ISO 8601 timestamp of the last post in the thread.
+    pub last_post_iso: String,
 }
 
 /// Generate the polling script with the given configuration
@@ -90,7 +100,9 @@ fn render_poll_script(config: &PollingConfig) -> String {
         interval: {initial_interval} * 1000,
         maxInterval: {max_interval} * 1000,
         disableAfter: {disable_after} * 1000,
-        initialInterval: {initial_interval} * 1000
+        initialInterval: {initial_interval} * 1000,
+        stale: {stale},
+        lastPostTime: '{last_post_iso}'
     }};
 
     var noUpdateSince = Date.now();
@@ -98,6 +110,20 @@ fn render_poll_script(config: &PollingConfig) -> String {
     var timerId = null;
     var stopped = false;
     var refreshBtn = null;
+
+    function buildUrl() {{
+        return '/api/thread/updates?handle=' + encodeURIComponent(cfg.handle) +
+               '&post_id=' + encodeURIComponent(cfg.postId) +
+               '&since_cid=' + encodeURIComponent(cfg.lastCid);
+    }}
+
+    function clearTimer() {{
+        if (timerId) {{ clearTimeout(timerId); timerId = null; }}
+    }}
+
+    function checkStale(r) {{
+        if (r.headers.get('X-Thread-Stale') === 'true') markStale();
+    }}
 
     // Find and initialize the refresh button in header
     function initRefreshButton() {{
@@ -111,15 +137,11 @@ fn render_poll_script(config: &PollingConfig) -> String {
             }}
             refreshBtn.disabled = true;
             refreshBtn.classList.add('spinning');
+            clearTimer();
 
-            if (timerId) clearTimeout(timerId);
-
-            var url = '/api/thread/updates?handle=' + encodeURIComponent(cfg.handle) +
-                      '&post_id=' + encodeURIComponent(cfg.postId) +
-                      '&since_cid=' + encodeURIComponent(cfg.lastCid);
-
-            fetch(url)
+            fetch(buildUrl())
                 .then(function(r) {{
+                    checkStale(r);
                     if (r.status === 204) return null;
                     if (!r.ok) throw new Error('Refresh failed: ' + r.status);
                     cfg.lastCid = r.headers.get('X-Last-CID') || cfg.lastCid;
@@ -133,7 +155,7 @@ fn render_poll_script(config: &PollingConfig) -> String {
                     }}
                     refreshBtn.classList.remove('spinning');
                     refreshBtn.disabled = false;
-                    schedule();
+                    if (!stopped) schedule();
                 }})
                 .catch(function(e) {{
                     console.error('Refresh error:', e);
@@ -144,23 +166,28 @@ fn render_poll_script(config: &PollingConfig) -> String {
         }});
     }}
 
+    function markStale() {{
+        if (stopped && window._threadStale) return;
+        stopped = true;
+        clearTimer();
+        window._threadStale = true;
+        document.dispatchEvent(new Event('threadstale'));
+    }}
+
     function poll() {{
         if (stopped) return;
 
         var now = Date.now();
         if (now - noUpdateSince > cfg.disableAfter) {{
-            stopped = true;
+            markStale();
             return;
         }}
 
         lastPollTime = now;
 
-        var url = '/api/thread/updates?handle=' + encodeURIComponent(cfg.handle) +
-                  '&post_id=' + encodeURIComponent(cfg.postId) +
-                  '&since_cid=' + encodeURIComponent(cfg.lastCid);
-
-        fetch(url)
+        fetch(buildUrl())
             .then(function(r) {{
+                checkStale(r);
                 if (r.status === 204) {{
                     cfg.interval = Math.min(cfg.interval * 1.5, cfg.maxInterval);
                     return null;
@@ -175,7 +202,7 @@ fn render_poll_script(config: &PollingConfig) -> String {
                     noUpdateSince = Date.now();
                     cfg.interval = cfg.initialInterval;
                 }}
-                schedule();
+                if (!stopped) schedule();
             }})
             .catch(function(e) {{
                 console.error('Poll error:', e);
@@ -196,19 +223,19 @@ fn render_poll_script(config: &PollingConfig) -> String {
         while (temp.firstChild) {{
             thread.appendChild(temp.firstChild);
         }}
-        // Reinitialize gallery handlers for new posts
+        // Reinitialize handlers for new posts
         if (window.setupGalleryHandlers) {{
             window.setupGalleryHandlers();
+        }}
+        if (window.convertTimestamps) {{
+            window.convertTimestamps();
         }}
     }}
 
     // Visibility-aware polling: pause when hidden, catch up when visible
     document.addEventListener('visibilitychange', function() {{
         if (document.hidden) {{
-            if (timerId) {{
-                clearTimeout(timerId);
-                timerId = null;
-            }}
+            clearTimer();
         }} else {{
             if (stopped) return;
             var elapsed = Date.now() - lastPollTime;
@@ -220,9 +247,31 @@ fn render_poll_script(config: &PollingConfig) -> String {
         }}
     }});
 
+    // Expose polling control for options menu
+    window._pollingActive = true;
+    window._lastPostTime = cfg.lastPostTime;
+    window._threadStale = cfg.stale;
+    window.setAutoRefreshEnabled = function(enabled) {{
+        if (enabled && stopped) {{
+            stopped = false;
+            noUpdateSince = Date.now();
+            cfg.interval = cfg.initialInterval;
+            schedule();
+        }} else if (!enabled && !stopped) {{
+            stopped = true;
+            clearTimer();
+        }}
+    }};
+
     // Initialize
     initRefreshButton();
-    schedule();
+
+    // Determine initial auto-refresh state from thread staleness
+    if (cfg.stale) {{
+        stopped = true;
+    }} else {{
+        schedule();
+    }}
 }})();
 "#,
         handle = html_escape::encode_text(&config.handle),
@@ -231,6 +280,8 @@ fn render_poll_script(config: &PollingConfig) -> String {
         initial_interval = config.initial_interval,
         max_interval = config.max_interval,
         disable_after = config.disable_after,
+        stale = if config.stale { "true" } else { "false" },
+        last_post_iso = html_escape::encode_text(&config.last_post_iso),
     )
 }
 
@@ -358,12 +409,13 @@ pub fn base_template_with_options(title: &str, content: &str, options: TemplateO
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{title}</title>
     {social_meta}{favicon}{pwa_meta}
-    <script>{theme_init}</script>
+    <script>{theme_init}{font_size_init}</script>
     <style>{css}</style>
 </head>
 <body>
 {content}
-<script>{theme_toggle}{sw_register}{gallery}</script>
+{options_menu}
+<script>{theme_toggle}{font_size_control}{sw_register}{gallery}{local_time}{options_menu_script}</script>
 </body>
 </html>"#,
         lang = html_escape::encode_quoted_attribute(lang),
@@ -372,34 +424,28 @@ pub fn base_template_with_options(title: &str, content: &str, options: TemplateO
         favicon = favicon_tag,
         pwa_meta = PWA_META_TAGS,
         theme_init = THEME_SCRIPT,
+        font_size_init = FONT_SIZE_INIT_SCRIPT,
         css = CSS_STYLES,
         content = content,
+        options_menu = OPTIONS_MENU_TEMPLATE,
         theme_toggle = THEME_TOGGLE_SCRIPT,
+        font_size_control = FONT_SIZE_CONTROL_SCRIPT,
         sw_register = SERVICE_WORKER_REGISTRATION,
-        gallery = GALLERY_SCRIPT
+        gallery = GALLERY_SCRIPT,
+        local_time = LOCAL_TIME_SCRIPT,
+        options_menu_script = OPTIONS_MENU_SCRIPT
     )
 }
 
 pub fn landing_page() -> String {
     let content = r#"<div class="landing-header">
-    <button id="theme-toggle" class="theme-toggle" role="switch" aria-checked="false" aria-label="Toggle dark mode">
-        <span class="theme-toggle-knob">
-            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="5"></circle>
-                <line x1="12" y1="1" x2="12" y2="3"></line>
-                <line x1="12" y1="21" x2="12" y2="23"></line>
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                <line x1="1" y1="12" x2="3" y2="12"></line>
-                <line x1="21" y1="12" x2="23" y2="12"></line>
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    <div class="header-controls">
+        <button id="options-btn" class="options-btn" type="button" aria-label="Open settings">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M11.078 2.25c-.917 0-1.699.663-1.85 1.567L9.05 4.889c-.02.12-.115.26-.297.348a7.493 7.493 0 00-.986.57c-.166.115-.334.126-.45.083L6.3 5.508a1.875 1.875 0 00-2.282.819l-.922 1.597a1.875 1.875 0 00.432 2.385l.84.692c.095.078.17.229.154.43a7.598 7.598 0 000 1.139c.015.2-.059.352-.153.43l-.841.692a1.875 1.875 0 00-.432 2.385l.922 1.597a1.875 1.875 0 002.282.818l1.019-.382c.115-.043.283-.031.45.082.312.214.641.405.985.57.182.088.277.228.297.35l.178 1.071c.151.904.933 1.567 1.85 1.567h1.844c.916 0 1.699-.663 1.85-1.567l.178-1.072c.02-.12.114-.26.297-.349.344-.165.673-.356.985-.57.167-.114.335-.125.45-.082l1.02.382a1.875 1.875 0 002.28-.819l.923-1.597a1.875 1.875 0 00-.432-2.385l-.84-.692c-.095-.078-.17-.229-.154-.43a7.614 7.614 0 000-1.139c-.016-.2.059-.352.153-.43l.84-.692c.708-.582.891-1.59.433-2.385l-.922-1.597a1.875 1.875 0 00-2.282-.818l-1.02.382c-.114.043-.282.031-.449-.083a7.49 7.49 0 00-.985-.57c-.183-.087-.277-.227-.297-.348l-.179-1.072a1.875 1.875 0 00-1.85-1.567h-1.843zM12 15.75a3.75 3.75 0 100-7.5 3.75 3.75 0 000 7.5z" clip-rule="evenodd" />
             </svg>
-            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-            </svg>
-        </span>
-    </button>
+        </button>
+    </div>
 </div>
 <main class="landing">
     <h1 class="landing-title">SK<span class="small">eet</span> LONGER</h1>
@@ -444,23 +490,29 @@ pub fn landing_page() -> String {
     <meta name="twitter:title" content="{title}">
     <meta name="twitter:description" content="{description}">
     {pwa_meta}
-    <script>{theme_init}</script>
+    <script>{theme_init}{font_size_init}</script>
     <style>{css}</style>
 </head>
 <body>
 {content}
-<script>{theme_toggle}{sw_register}{pwa_install}</script>
+{options_menu}
+<script>{theme_toggle}{font_size_control}{sw_register}{pwa_install}{local_time}{options_menu_script}</script>
 </body>
 </html>"#,
         title = html_escape::encode_text(title),
         description = html_escape::encode_text(description),
         pwa_meta = PWA_META_TAGS,
         theme_init = THEME_SCRIPT,
+        font_size_init = FONT_SIZE_INIT_SCRIPT,
         css = CSS_STYLES,
         content = content,
+        options_menu = OPTIONS_MENU_TEMPLATE,
         theme_toggle = THEME_TOGGLE_SCRIPT,
+        font_size_control = FONT_SIZE_CONTROL_SCRIPT,
         sw_register = SERVICE_WORKER_REGISTRATION,
-        pwa_install = PWA_INSTALL_SCRIPT
+        pwa_install = PWA_INSTALL_SCRIPT,
+        local_time = LOCAL_TIME_SCRIPT,
+        options_menu_script = OPTIONS_MENU_SCRIPT
     )
 }
 
@@ -554,7 +606,7 @@ pub fn streaming_head(options: StreamingHeadOptions) -> String {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{title}</title>
     {social_meta}{favicon}{pwa_meta}
-    <script>{theme_init}</script>
+    <script>{theme_init}{font_size_init}</script>
     <style>{css}</style>
 </head>
 <body>
@@ -567,6 +619,7 @@ pub fn streaming_head(options: StreamingHeadOptions) -> String {
         favicon = favicon_tag,
         pwa_meta = PWA_META_TAGS,
         theme_init = THEME_SCRIPT,
+        font_size_init = FONT_SIZE_INIT_SCRIPT,
         css = CSS_STYLES,
         header = header,
     )
@@ -594,17 +647,22 @@ pub fn streaming_footer(original_post_url: &str, polling: Option<&PollingConfig>
 <footer>
     {footer_content}
 </footer>
+{options_menu}
 <script>
 document.getElementById('loading-indicator')?.remove();
-{theme_toggle}{sw_register}{gallery}{poll_script}
+{theme_toggle}{font_size_control}{sw_register}{gallery}{local_time}{poll_script}{options_menu_script}
 </script>
 </body>
 </html>"#,
         footer_content = footer_content,
+        options_menu = OPTIONS_MENU_TEMPLATE,
         theme_toggle = THEME_TOGGLE_SCRIPT,
+        font_size_control = FONT_SIZE_CONTROL_SCRIPT,
         sw_register = SERVICE_WORKER_REGISTRATION,
         gallery = GALLERY_SCRIPT,
-        poll_script = poll_script
+        local_time = LOCAL_TIME_SCRIPT,
+        poll_script = poll_script,
+        options_menu_script = OPTIONS_MENU_SCRIPT
     )
 }
 

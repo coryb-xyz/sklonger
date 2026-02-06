@@ -126,6 +126,9 @@ pub async fn get_thread_updates(
         .await
         .map_err(map_client_error)?;
 
+    // Capture last post timestamp before posts are consumed by into_iter
+    let last_post_time = thread.posts.last().map(|p| p.created_at);
+
     // Find posts after the since_cid
     let since_idx = thread.posts.iter().position(|p| p.cid == params.since_cid);
 
@@ -138,8 +141,17 @@ pub async fn get_thread_updates(
     };
 
     if new_posts.is_empty() {
+        // Check if the thread has gone stale (last post older than threshold)
+        let is_stale = last_post_time
+            .map(|ts| {
+                Utc::now().signed_duration_since(ts).num_seconds()
+                    >= state.config.poll_disable_after as i64
+            })
+            .unwrap_or(true);
+
         return Ok(Response::builder()
             .status(StatusCode::NO_CONTENT)
+            .header("X-Thread-Stale", if is_stale { "true" } else { "false" })
             .body(Body::empty())
             .unwrap());
     }
@@ -160,11 +172,13 @@ pub async fn get_thread_updates(
         "returning thread updates"
     );
 
+    // New posts arrived, so the thread is active
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "text/html; charset=utf-8")
         .header("X-Last-CID", last_cid.as_str())
         .header("X-Post-Count", post_count.to_string())
+        .header("X-Thread-Stale", "false")
         .body(Body::from(html))
         .unwrap())
 }
@@ -263,7 +277,8 @@ pub async fn get_thread_streaming(
                         author_handle, post_id_str
                     );
 
-                    // Enable polling only if configured and thread is recent
+                    // Enable polling if configured; mark stale threads so
+                    // auto-refresh starts off but can be toggled on by the user.
                     let is_thread_recent = last_post_timestamp
                         .map(|ts| {
                             let age = Utc::now().signed_duration_since(ts).num_seconds();
@@ -271,7 +286,7 @@ pub async fn get_thread_streaming(
                         })
                         .unwrap_or(false);
 
-                    let polling_config = if config.poll_enabled && is_thread_recent {
+                    let polling_config = if config.poll_enabled {
                         Some(PollingConfig {
                             handle: author_handle.clone(),
                             post_id: post_id_str.to_string(),
@@ -279,6 +294,10 @@ pub async fn get_thread_streaming(
                             initial_interval: config.poll_initial_interval,
                             max_interval: config.poll_max_interval,
                             disable_after: config.poll_disable_after,
+                            stale: !is_thread_recent,
+                            last_post_iso: last_post_timestamp
+                                .map(|ts| ts.to_rfc3339())
+                                .unwrap_or_default(),
                         })
                     } else {
                         None
