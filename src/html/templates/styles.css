@@ -14,6 +14,9 @@
     --toggle-bg: #e5e7eb;
     --toggle-knob: #ffffff;
     --toggle-icon: #f59e0b;
+    /* Font size control - default values */
+    --content-font-size: 16px;
+    --content-font-size-sm: 14px;
 }
 
 /* Dark mode - optimized for reduced eye strain
@@ -77,7 +80,7 @@ body {
     line-height: 1.6;
     color: var(--text-primary);
     background-color: var(--bg-primary);
-    max-width: 700px;
+    max-width: 70ch;
     margin: 0 auto;
     padding: 20px;
     padding-top: 80px;
@@ -89,7 +92,7 @@ header {
     top: 0;
     left: 0;
     right: 0;
-    max-width: 700px;
+    max-width: 70ch;
     margin: 0 auto;
     padding: 16px 20px;
     background-color: var(--bg-primary);
@@ -202,10 +205,18 @@ a.author:hover .display-name {
     .post {
         animation: none;
     }
+
+    .options-menu {
+        transition: none;
+    }
+
+    .options-overlay {
+        transition: none;
+    }
 }
 
 .post-text {
-    font-size: 16px;
+    font-size: var(--content-font-size);
     white-space: pre-wrap;
     word-wrap: break-word;
     line-height: 1.7;
@@ -401,7 +412,7 @@ a.author:hover .display-name {
 }
 
 .record-text {
-    font-size: 14px;
+    font-size: var(--content-font-size-sm);
     line-height: 1.5;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -846,6 +857,218 @@ footer a:hover {
     display: none;
 }
 
+/* Options button in header */
+.options-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+    flex-shrink: 0;
+    padding: 0;
+}
+
+@media (hover: hover) {
+    .options-btn:hover {
+        background-color: var(--border-color);
+        color: var(--text-primary);
+    }
+}
+
+.options-btn:focus {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+}
+
+.options-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* Options menu overlay */
+.options-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0);
+    z-index: 200;
+    transition: background-color 0.3s ease;
+}
+
+.options-overlay.active {
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* Options menu slide-up panel */
+.options-menu {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-width: 70ch;
+    margin: 0 auto;
+    height: 50vh;
+    background-color: var(--bg-primary);
+    border-top: 1px solid var(--border-color);
+    border-radius: 16px 16px 0 0;
+    z-index: 201;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.options-menu.active {
+    transform: translateY(0);
+}
+
+.options-menu-handle {
+    width: 36px;
+    height: 4px;
+    background-color: var(--border-color);
+    border-radius: 2px;
+    margin: 12px auto;
+    flex-shrink: 0;
+}
+
+.options-menu-content {
+    padding: 8px 24px 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.options-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 0;
+}
+
+.options-row + .options-row {
+    border-top: 1px solid var(--border-color);
+}
+
+.options-label {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+/* Font size +/- controls */
+.font-size-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.font-size-step-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    font-weight: 600;
+    font-family: inherit;
+    transition: background-color 0.15s ease;
+    flex-shrink: 0;
+}
+
+@media (hover: hover) {
+    .font-size-step-btn:hover:not(:disabled) {
+        background-color: var(--border-color);
+    }
+}
+
+.font-size-step-btn:focus {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+}
+
+.font-size-step-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.font-size-display {
+    min-width: 48px;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Auto-refresh toggle */
+.auto-refresh-toggle {
+    position: relative;
+    width: 52px;
+    height: 28px;
+    background-color: var(--toggle-bg);
+    border-radius: 14px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    border: none;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.auto-refresh-toggle[aria-checked="true"] {
+    background-color: var(--accent-color);
+}
+
+.auto-refresh-toggle:focus {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+}
+
+.auto-refresh-toggle-knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    background-color: var(--toggle-knob);
+    border-radius: 50%;
+    transition: transform 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.auto-refresh-toggle[aria-checked="true"] .auto-refresh-toggle-knob {
+    transform: translateX(24px);
+}
+
+/* Last post notice in options menu */
+.last-post-notice {
+    font-size: 11px;
+    color: var(--text-muted);
+    opacity: 0.7;
+    padding: 4px 0 0;
+    text-align: right;
+}
+
+/* Header controls container for theme and font size */
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 /* Mobile responsive adjustments */
 @media (max-width: 600px) {
     body {
@@ -902,6 +1125,16 @@ footer a:hover {
     .home-link svg {
         width: 16px;
         height: 16px;
+    }
+
+    .options-btn {
+        width: 32px;
+        height: 32px;
+    }
+
+    .options-btn svg {
+        width: 18px;
+        height: 18px;
     }
 
     .theme-toggle {
@@ -1151,6 +1384,18 @@ footer a:hover {
 
     .theme-toggle {
         display: none;
+    }
+
+    .options-btn {
+        display: none;
+    }
+
+    .options-overlay {
+        display: none !important;
+    }
+
+    .options-menu {
+        display: none !important;
     }
 
     .gallery-overlay {

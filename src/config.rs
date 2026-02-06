@@ -56,7 +56,7 @@ impl Config {
             poll_enabled: parse_bool_env_or_default("POLL_ENABLED", true)?,
             poll_initial_interval: parse_env_or_default("POLL_INITIAL_INTERVAL_SECONDS", 30)?,
             poll_max_interval: parse_env_or_default("POLL_MAX_INTERVAL_SECONDS", 120)?,
-            poll_disable_after: parse_env_or_default("POLL_DISABLE_AFTER_SECONDS", 600)?,
+            poll_disable_after: parse_env_or_default("POLL_DISABLE_AFTER_SECONDS", 1800)?,
             public_url: env_var_or_default("PUBLIC_URL", "https://sklonger.app"),
         })
     }

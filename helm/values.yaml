@@ -24,7 +24,7 @@ config:
   pollEnabled: true
   pollInitialIntervalSeconds: 30
   pollMaxIntervalSeconds: 120
-  pollDisableAfterSeconds: 600
+  pollDisableAfterSeconds: 1800
 
 serviceAccount:
   create: false
