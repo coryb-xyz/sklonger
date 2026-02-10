@@ -10,11 +10,25 @@ use atrium_api::types::Union;
 use atrium_xrpc_client::reqwest::ReqwestClient;
 use chrono::{DateTime, Utc};
 use thiserror::Error;
+use tracing::warn;
 
 use super::types::{
     AspectRatio, Author, Embed, EmbedExternal, EmbedImage, EmbedRecord, EmbedVideo, StreamEvent,
     Thread, ThreadPost,
 };
+
+/// Parse a `createdAt` field from a JSON value, falling back to UNIX_EPOCH with a warning.
+fn parse_created_at(value: &serde_json::Value, context: &str) -> DateTime<Utc> {
+    value
+        .get("createdAt")
+        .and_then(|v| v.as_str())
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(|| {
+            warn!("failed to parse createdAt from {}, using epoch", context);
+            DateTime::UNIX_EPOCH
+        })
+}
 
 #[derive(Error, Debug)]
 pub enum ClientError {
@@ -381,12 +395,7 @@ impl BlueskyClient {
                     .unwrap_or("")
                     .to_string();
 
-                let created_at = value
-                    .get("createdAt")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(Utc::now);
+                let created_at = parse_created_at(&value, "embed record");
 
                 // Recursively extract any embeds within the quoted post
                 // Note: embeds in ViewRecord use ViewRecordEmbedsItem, which is a subset
@@ -420,12 +429,7 @@ impl BlueskyClient {
             .unwrap_or("")
             .to_string();
 
-        let created_at = value
-            .get("createdAt")
-            .and_then(|v| v.as_str())
-            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(Utc::now);
+        let created_at = parse_created_at(&value, "post record");
 
         let langs = value
             .get("langs")
