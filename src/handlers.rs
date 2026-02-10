@@ -77,20 +77,16 @@ fn map_client_error(e: ClientError) -> AppError {
     }
 }
 
-pub async fn get_thread(
-    State(state): State<AppState>,
-    Query(params): Query<ThreadQuery>,
-) -> Result<Html<String>, AppError> {
+pub async fn get_thread(Query(params): Query<ThreadQuery>) -> Result<Response, AppError> {
     let url = match params.url {
         Some(u) if !u.is_empty() => u,
-        _ => return Ok(Html(landing_page())),
+        _ => return Ok(Html(landing_page()).into_response()),
     };
-
-    info!(url = %url, "fetching thread");
 
     let parsed = parse_bluesky_url(&url).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    fetch_and_render_thread(&state, &parsed.handle, &parsed.post_id).await
+    let redirect_path = format!("/profile/{}/post/{}", parsed.handle, parsed.post_id);
+    Ok(Redirect::to(&redirect_path).into_response())
 }
 
 async fn fetch_and_render_thread(
@@ -323,6 +319,7 @@ pub async fn get_thread_streaming(
         .header("Content-Type", "text/html; charset=utf-8")
         .header("Transfer-Encoding", "chunked")
         .header("X-Content-Type-Options", "nosniff")
+        .header("Cache-Control", "no-store")
         .body(Body::from_stream(body_stream))
         .unwrap()
 }
@@ -387,12 +384,10 @@ pub async fn share_target(Query(params): Query<ShareQuery>) -> Result<Redirect, 
     let url = extract_bluesky_url(&params)?;
     info!(url = %url, "share target received Bluesky URL");
 
-    let encoded_url = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("url", &url)
-        .finish();
-    let redirect_url = format!("/?{}", encoded_url);
+    let parsed = parse_bluesky_url(&url).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let redirect_path = format!("/profile/{}/post/{}", parsed.handle, parsed.post_id);
 
-    Ok(Redirect::to(&redirect_url))
+    Ok(Redirect::to(&redirect_path))
 }
 
 /// Extract a Bluesky URL from share target parameters.
